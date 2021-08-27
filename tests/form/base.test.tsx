@@ -10,6 +10,8 @@ import ProForm, {
   ProFormField,
 } from '@ant-design/pro-form';
 import { act } from 'react-dom/test-utils';
+import { FontSizeOutlined } from '@ant-design/icons';
+
 import { mount } from 'enzyme';
 import { waitTime, waitForComponentToPaint } from '../util';
 
@@ -21,8 +23,48 @@ describe('ProForm', () => {
   });
 
   it('📦 ProForm support sync form url', async () => {
-    const wrapper = mount(
-      <ProForm onFinish={async () => {}} syncToUrl>
+    const fn = jest.fn();
+    const wrapper = mount<{ navTheme: string }>(
+      <ProForm
+        onFinish={async (values) => {
+          fn(values.navTheme);
+        }}
+        syncToUrl
+      >
+        <ProFormText
+          tooltip={{
+            title: '主题',
+            icon: <FontSizeOutlined />,
+          }}
+          name="navTheme"
+        />
+      </ProForm>,
+    );
+    await waitForComponentToPaint(wrapper);
+
+    act(() => {
+      wrapper.find('button.ant-btn-primary').simulate('click');
+    });
+    await waitForComponentToPaint(wrapper);
+    expect(fn).toHaveBeenCalledWith('realDark');
+
+    act(() => {
+      wrapper.find('button.ant-btn').at(1).simulate('click');
+    });
+    await waitForComponentToPaint(wrapper);
+    expect(fn).toHaveBeenCalledWith('realDark');
+  });
+
+  it('📦 ProForm support sync form url', async () => {
+    const fn = jest.fn();
+    const wrapper = mount<{ navTheme: string }>(
+      <ProForm
+        onFinish={async (values) => {
+          fn(values.navTheme);
+        }}
+        syncToUrl
+        syncToInitialValues={false}
+      >
         <ProFormText name="navTheme" />
       </ProForm>,
     );
@@ -31,14 +73,53 @@ describe('ProForm', () => {
     act(() => {
       wrapper.find('button.ant-btn-primary').simulate('click');
     });
+    await waitForComponentToPaint(wrapper);
+    expect(fn).toHaveBeenCalledWith('realDark');
 
     act(() => {
       wrapper.find('button.ant-btn').at(1).simulate('click');
     });
+    await waitForComponentToPaint(wrapper);
+    act(() => {
+      wrapper.find('button.ant-btn-primary').simulate('click');
+    });
+    await waitForComponentToPaint(wrapper);
+    expect(fn).toHaveBeenCalledWith(undefined);
+  });
 
+  it('📦 ProForm initialValues update will warning', async () => {
+    const fn = jest.fn();
+    const wrapper = mount(
+      <ProForm
+        onFinish={async (values) => {
+          fn(values.navTheme);
+        }}
+        initialValues={{}}
+      >
+        <ProFormText name="navTheme" />
+      </ProForm>,
+    );
     await waitForComponentToPaint(wrapper);
 
-    expect(wrapper.render()).toMatchSnapshot();
+    act(() => {
+      wrapper.find('button.ant-btn-primary').simulate('click');
+    });
+    await waitForComponentToPaint(wrapper);
+    expect(fn).toHaveBeenCalledWith(undefined);
+
+    act(() => {
+      wrapper.setProps({
+        initialValues: {
+          navTheme: 'xxx',
+        },
+      });
+    });
+    await waitForComponentToPaint(wrapper);
+    act(() => {
+      wrapper.find('button.ant-btn-primary').simulate('click');
+    });
+    await waitForComponentToPaint(wrapper);
+    expect(fn).toHaveBeenCalledWith(undefined);
   });
 
   it('📦 onFinish should simulate button loading', async () => {
@@ -322,6 +403,39 @@ describe('ProForm', () => {
     expect(wrapper.find('Button#test').text()).toBe('获取验证码');
   });
 
+  it('📦 ProFormCaptcha support value and onchange', async () => {
+    const onFinish = jest.fn();
+    const wrapper = mount(
+      <ProForm onFinish={(values) => onFinish(values.name)}>
+        <ProFormCaptcha
+          onGetCaptcha={async () => {
+            await waitTime(10);
+          }}
+          countDown={2}
+          label="name"
+          name="name"
+        />
+      </ProForm>,
+    );
+    await waitForComponentToPaint(wrapper);
+    act(() => {
+      wrapper.find('input#name').simulate('change', {
+        target: {
+          value: 'test',
+        },
+      });
+    });
+
+    await waitForComponentToPaint(wrapper, 100);
+
+    act(() => {
+      wrapper.find('button.ant-btn-primary').simulate('click');
+    });
+    await waitForComponentToPaint(wrapper, 100);
+
+    expect(onFinish).toBeCalledWith('test');
+  });
+
   it('📦 ProFormCaptcha support captchaTextRender', async () => {
     const wrapper = mount(
       <ProForm>
@@ -579,6 +693,22 @@ describe('ProForm', () => {
 
     expect(fn).not.toBeCalled();
   });
+  it('📦 ProForm.Group support FormItem hidden', async () => {
+    const wrapper = mount(
+      <ProForm>
+        <ProForm.Group title="qixian" collapsible>
+          <ProFormText name="mobile" hidden />
+          <div>mobile</div>
+          <ProFormText name="mobile2" />
+        </ProForm.Group>
+      </ProForm>,
+    );
+
+    await waitForComponentToPaint(wrapper);
+
+    expect(wrapper.find('.ant-pro-form-group-container div.ant-form-item').length).toBe(1);
+    expect(wrapper.find('.ant-pro-form-group-container div.ant-space-item').length).toBe(2);
+  });
 
   it('📦 ProFormField support onChange', async () => {
     const fn = jest.fn();
@@ -723,15 +853,14 @@ describe('ProForm', () => {
     expect(wrapper.find('.ant-select-item-option-content div span').text()).toBe('全');
   });
 
-  it('📦 SearchSelect onSearch support valueEnum', async () => {
+  it('📦 SearchSelect onSearch support valueEnum clear', async () => {
     const onSearch = jest.fn();
-    const onFinish = jest.fn();
+    const onValuesChange = jest.fn();
     const wrapper = mount(
       <ProForm
         onValuesChange={async (values) => {
-          console.log(values);
           //  {"disabled": undefined, "key": "all", "label": "全部", "value": "all"}
-          onFinish(values.userQuery[0].label);
+          onValuesChange(values.userQuery[0].label);
         }}
       >
         <ProFormSelect.SearchSelect
@@ -783,10 +912,10 @@ describe('ProForm', () => {
 
     await waitForComponentToPaint(wrapper);
 
-    expect(onFinish).toBeCalledWith('全部');
+    expect(onValuesChange).toBeCalledWith('全部');
   });
 
-  it('📦 SearchSelect onSearch support valueEnum', async () => {
+  it('📦 SearchSelect onSearch support valueEnum clear item filter', async () => {
     const onSearch = jest.fn();
     const wrapper = mount(
       <ProForm>
@@ -998,7 +1127,7 @@ describe('ProForm', () => {
     expect(wrapper.find('.ant-select-item').length).toBe(4);
   });
 
-  it('📦 SearchSelect support searchOnFocus', async () => {
+  it('📦 SearchSelect support resetAfterSelect', async () => {
     const onSearch = jest.fn();
     const wrapper = mount(
       <ProForm>
@@ -1136,12 +1265,173 @@ describe('ProForm', () => {
       wrapper.find('.ant-btn-primary').simulate('submit');
     });
 
+    // 多次提交需要阻止
+    act(() => {
+      wrapper.find('.ant-btn-primary').simulate('submit');
+    });
+
     await waitForComponentToPaint(wrapper);
 
     expect(onFinish).toBeCalledWith(2);
   });
 
-  it('📦 Select support singe', async () => {
+  it('📦 SearchSelect filter support optionGroup', async () => {
+    const onValuesChange = jest.fn();
+    const wrapper = mount(
+      <ProForm
+        onValuesChange={async (values) => {
+          onValuesChange(values?.userQuery[0].value);
+        }}
+      >
+        <ProFormSelect.SearchSelect
+          name="userQuery"
+          label="业务线"
+          rules={[{ required: true }]}
+          options={[
+            {
+              label: 'A系统',
+              value: 'A系统',
+              optionType: 'optGroup',
+              children: [
+                { label: '门店小程序', value: '门店小程序' },
+                { label: '资金线', value: '资金线' },
+              ],
+            },
+            {
+              label: 'B系统',
+              value: 'B系统',
+              optionType: 'optGroup',
+              children: [
+                { label: 'B门店小程序', value: 'B门店小程序' },
+                { label: 'B资金线', value: 'B资金线' },
+              ],
+            },
+          ]}
+          showSearch
+          fieldProps={{
+            allowClear: false,
+            showSearch: true,
+          }}
+        />
+      </ProForm>,
+    );
+    await waitForComponentToPaint(wrapper);
+
+    act(() => {
+      wrapper.find('.ant-select-selection-search-input').simulate('change', {
+        target: {
+          value: '门',
+        },
+      });
+    });
+
+    await waitForComponentToPaint(wrapper);
+
+    act(() => {
+      wrapper.find('.ant-select-selector').simulate('mousedown');
+      wrapper.update();
+    });
+
+    act(() => {
+      wrapper.find('.ant-select-selector').simulate('mousedown');
+      wrapper.update();
+    });
+    expect(wrapper.find('.ant-select-item-option-content div span').at(0).text()).toBe('门');
+
+    // 应该有两个 item 被筛选出来
+    expect(wrapper.find('div.ant-select-item.ant-select-item-option').length).toBe(2);
+
+    act(() => {
+      wrapper.find('.ant-select-item.ant-select-item-option').at(0).simulate('click');
+    });
+
+    await waitForComponentToPaint(wrapper);
+
+    expect(onValuesChange).toBeCalledWith('门店小程序');
+
+    // 应该有两个 item 被筛选出来
+    expect(wrapper.find('div.ant-select-item.ant-select-item-option').length).toBe(4);
+  });
+
+  it('📦 SearchSelect filter support (', async () => {
+    const onValuesChange = jest.fn();
+    const wrapper = mount(
+      <ProForm
+        onValuesChange={async (values) => {
+          onValuesChange(values?.userQuery[0].value);
+        }}
+      >
+        <ProFormSelect.SearchSelect
+          name="userQuery"
+          label="业务线"
+          rules={[{ required: true }]}
+          options={[
+            {
+              label: 'A系统',
+              value: 'A系统',
+              optionType: 'optGroup',
+              children: [
+                { label: '门店小程序(测试)', value: '门店小程序' },
+                { label: '资金线', value: '资金线' },
+              ],
+            },
+            {
+              label: 'B系统',
+              value: 'B系统',
+              optionType: 'optGroup',
+              children: [
+                { label: 'B门店小程序', value: 'B门店小程序' },
+                { label: 'B资金线', value: 'B资金线' },
+              ],
+            },
+          ]}
+          showSearch
+          fieldProps={{
+            allowClear: false,
+            showSearch: true,
+          }}
+        />
+      </ProForm>,
+    );
+    await waitForComponentToPaint(wrapper);
+
+    act(() => {
+      wrapper.find('.ant-select-selection-search-input').simulate('change', {
+        target: {
+          value: '(测试)',
+        },
+      });
+    });
+
+    await waitForComponentToPaint(wrapper);
+
+    act(() => {
+      wrapper.find('.ant-select-selector').simulate('mousedown');
+      wrapper.update();
+    });
+
+    act(() => {
+      wrapper.find('.ant-select-selector').simulate('mousedown');
+      wrapper.update();
+    });
+    expect(wrapper.find('.ant-select-item-option-content div span').at(0).text()).toBe('(测试)');
+
+    // 应该有两个 item 被筛选出来
+    expect(wrapper.find('div.ant-select-item.ant-select-item-option').length).toBe(1);
+
+    act(() => {
+      wrapper.find('.ant-select-item.ant-select-item-option').at(0).simulate('click');
+    });
+
+    await waitForComponentToPaint(wrapper);
+
+    expect(onValuesChange).toBeCalledWith('门店小程序');
+
+    // 应该有两个 item 被筛选出来
+    expect(wrapper.find('div.ant-select-item.ant-select-item-option').length).toBe(4);
+  });
+
+  it('📦 Select support single', async () => {
     const onFinish = jest.fn();
     const wrapper = mount(
       <ProForm
@@ -1205,7 +1495,7 @@ describe('ProForm', () => {
     expect(onFinish).toBeCalledWith('open');
   });
 
-  it('📦 Select support labelInValue singe', async () => {
+  it('📦 Select support labelInValue single', async () => {
     const onFinish = jest.fn();
     const wrapper = mount(
       <ProForm

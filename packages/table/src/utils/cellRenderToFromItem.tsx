@@ -1,8 +1,9 @@
 import React from 'react';
 import type { FormInstance, FormItemProps } from 'antd';
-import { Form } from 'antd';
-import type { ProFieldEmptyText, ProFieldPropsType } from '@ant-design/pro-field';
-import ProField from '@ant-design/pro-field';
+import type { ProFormFieldProps } from '@ant-design/pro-form';
+import ProForm, { ProFormField } from '@ant-design/pro-form';
+import type { ProFieldEmptyText } from '@ant-design/pro-field';
+import isDeepEqualReact from 'fast-deep-equal/es6/react';
 import type { ProFieldValueType, ProSchemaComponentTypes } from '@ant-design/pro-utils';
 import { runFunction } from '@ant-design/pro-utils';
 import { getFieldPropsOrFormItemProps, InlineErrorFormItem } from '@ant-design/pro-utils';
@@ -22,24 +23,28 @@ export const spellNamePath = (base: React.Key, dataIndex: React.Key | React.Key[
   return [base, dataIndex].flat(1);
 };
 
+type RenderToFromItemProps<T> = {
+  text: string | number | React.ReactText[];
+  valueType: ProColumnType['valueType'];
+  index: number;
+  rowData?: T;
+  columnEmptyText?: ProFieldEmptyText;
+  columnProps?: ProColumnType<T> & {
+    entity: T;
+  };
+  type?: ProSchemaComponentTypes;
+  // 行的唯一 key
+  recordKey?: React.Key;
+  mode: 'edit' | 'read';
+};
+
 /**
  * 根据不同的类型来转化数值
  *
  * @param text
  * @param valueType
  */
-function cellRenderToFromItem<T>(config: {
-  text: string | number | React.ReactText[];
-  valueType: ProColumnType['valueType'];
-  index: number;
-  rowData?: T;
-  columnEmptyText?: ProFieldEmptyText;
-  columnProps?: ProColumnType<T>;
-  type?: ProSchemaComponentTypes;
-  // 行的唯一 key
-  recordKey?: React.Key;
-  mode: 'edit' | 'read';
-}): React.ReactNode {
+function cellRenderToFromItem<T>(config: RenderToFromItemProps<T>): React.ReactNode {
   const { text, valueType, rowData, columnProps } = config;
   // 如果 valueType === text ，没必要多走一次 render
   if (
@@ -61,22 +66,26 @@ function cellRenderToFromItem<T>(config: {
   }
 
   /** 生成公用的 proField dom 配置 */
-  const proFieldProps: ProFieldPropsType = {
+  const proFieldProps: ProFormFieldProps = {
     valueEnum: runFunction<[T | undefined]>(columnProps?.valueEnum, rowData),
     request: columnProps?.request,
     params: columnProps?.params,
-    proFieldKey: `table-field-${columnProps?.dataIndex?.toString() || columnProps?.key}`,
     text: valueType === 'index' || valueType === 'indexBorder' ? config.index : text,
     mode: config.mode,
-    emptyText: config.columnEmptyText,
     renderFormItem: undefined,
     valueType: valueType as ProFieldValueType,
+    proFieldProps: {
+      emptyText: config.columnEmptyText,
+      proFieldKey: `table-field-${columnProps?.dataIndex?.toString() || columnProps?.key}`,
+    },
   };
 
   /** 只读模式直接返回就好了，不需要处理 formItem */
   if (config.mode !== 'edit') {
     return (
-      <ProField
+      <ProFormField
+        mode="read"
+        ignoreFormItem
         fieldProps={getFieldPropsOrFormItemProps(columnProps?.fieldProps, null, columnProps)}
         {...proFieldProps}
       />
@@ -85,16 +94,27 @@ function cellRenderToFromItem<T>(config: {
 
   // 如果是编辑模式，需要用 Form.Item 包一下
   return (
-    <Form.Item
+    <ProForm.Item
       // 一般而言是没有跨行依赖的，所以这里比较行来判断是否应该刷新
       // 对多行编辑有巨大的性能提升
       shouldUpdate={(pre, next) => {
+        if (
+          !columnProps?.fieldProps &&
+          !columnProps?.formItemProps &&
+          !columnProps?.renderFormItem
+        ) {
+          return false;
+        }
         const name = [config.recordKey].flat(1) as string[];
-        return get(pre, name) !== get(next, name);
+        return !isDeepEqualReact(get(pre, name), get(next, name));
       }}
       noStyle
     >
       {(form) => {
+        const shouldUpdate = (pre: any, next: any) => {
+          const rowName = [config.recordKey].flat(1) as string[];
+          return !isDeepEqualReact(get(pre, rowName), get(next, rowName));
+        };
         const name = spellNamePath(
           config.recordKey || config.index,
           columnProps?.key || columnProps?.dataIndex || config.index,
@@ -119,7 +139,9 @@ function cellRenderToFromItem<T>(config: {
         };
 
         const inputDom = (
-          <ProField
+          <ProFormField
+            name={name}
+            ignoreFormItem
             fieldProps={getFieldPropsOrFormItemProps(
               columnProps?.fieldProps,
               form as FormInstance,
@@ -138,6 +160,7 @@ function cellRenderToFromItem<T>(config: {
         if (!columnProps?.renderFormItem) {
           return (
             <InlineErrorFormItem
+              shouldUpdate={shouldUpdate}
               errorType="popover"
               name={name}
               {...formItemProps}
@@ -159,6 +182,7 @@ function cellRenderToFromItem<T>(config: {
           {
             defaultRender: () => (
               <InlineErrorFormItem
+                shouldUpdate={shouldUpdate}
                 errorType="popover"
                 name={name}
                 {...formItemProps}
@@ -178,6 +202,7 @@ function cellRenderToFromItem<T>(config: {
         return (
           <InlineErrorFormItem
             errorType="popover"
+            shouldUpdate={shouldUpdate}
             name={spellNamePath(
               config.recordKey || config.index,
               columnProps?.key || columnProps?.dataIndex || config.index,
@@ -190,7 +215,7 @@ function cellRenderToFromItem<T>(config: {
           </InlineErrorFormItem>
         );
       }}
-    </Form.Item>
+    </ProForm.Item>
   );
 }
 
