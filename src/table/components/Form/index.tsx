@@ -1,0 +1,168 @@
+import { omit } from '@rc-component/util';
+import type { TablePaginationConfig } from 'antd';
+import React, { memo, useMemo } from 'react';
+import { isDeepEqualReact, omitUndefined, useRefFunction } from '../../../utils';
+import type { ActionType, ProTableProps } from '../../typing';
+import { isBordered } from '../../utils/index';
+import FormRender from './FormRender';
+
+type BaseFormProps<T, U> = {
+  pagination?: TablePaginationConfig | false;
+  beforeSearchSubmit?: (params: Partial<U>) => any;
+  action: React.MutableRefObject<ActionType | undefined>;
+  onSubmit?: (params: U) => void;
+  onReset?: () => void;
+  loading: boolean;
+  onFormSearchSubmit: (params: U) => void;
+  columns: ProTableProps<T, U, any>['columns'];
+  dateFormatter: ProTableProps<T, U, any>['dateFormatter'];
+  formRef: ProTableProps<T, U, any>['formRef'];
+  type: ProTableProps<T, U, any>['type'];
+  cardBordered: ProTableProps<T, U, any>['cardBordered'];
+  form: ProTableProps<T, U, any>['form'];
+  search: ProTableProps<T, U, any>['search'];
+  manualRequest: ProTableProps<T, U, any>['manualRequest'];
+};
+
+/** 查询表单相关的配置 */
+const FormSearch = <T, U>(props: BaseFormProps<T, U> & { ghost?: boolean }) => {
+  const {
+    columns,
+    loading,
+    formRef,
+    type,
+    action,
+    cardBordered,
+    dateFormatter,
+    form,
+    search,
+    pagination,
+    ghost,
+    manualRequest,
+    beforeSearchSubmit = (searchParams: Partial<U>) => searchParams,
+    onSubmit,
+    onFormSearchSubmit,
+    onReset,
+  } = props;
+
+  // 只传入 pagination 中的 current 和 pageSize 参数
+  const pageInfo = useMemo(
+    () =>
+      pagination
+        ? omitUndefined({
+            current: pagination.current,
+            pageSize: pagination.pageSize,
+          })
+        : {},
+    [pagination],
+  );
+
+  const onSubmitHandler = useRefFunction((value: U, firstLoad: boolean) => {
+    const runSubmit = () => {
+      const submitParams = { ...value, _timestamp: Date.now(), ...pageInfo };
+      const omitParams = omit(
+        beforeSearchSubmit(submitParams),
+        Object.keys(pageInfo!),
+      ) as U;
+      onFormSearchSubmit(omitParams);
+      if (!firstLoad) {
+        // 不是第一次提交才跳回第一页，并触发 onSubmit
+        // 为了解决 https://github.com/ant-design/pro-components/issues/579
+        action.current?.setPageInfo?.({ current: 1 });
+        onSubmit?.(value);
+      }
+    };
+
+    if (form?.ignoreRules === false && firstLoad) {
+      // 首次提交时需要先通过校验再执行
+      formRef?.current?.validateFields().then(runSubmit).catch(() => {});
+      return;
+    }
+    runSubmit();
+    return true;
+  });
+
+  const onResetHandler = useRefFunction((value: Partial<U>) => {
+    const resetLogic = () => {
+      const omitParams = omit(
+        beforeSearchSubmit({ ...value, ...pageInfo }),
+        Object.keys(pageInfo!),
+      ) as U;
+      onFormSearchSubmit(omitParams);
+      // back first page
+      action.current?.setPageInfo?.({
+        current: 1,
+      });
+      onReset?.();
+    };
+
+    if (form?.ignoreRules === false) {
+      formRef?.current?.validateFields().then(resetLogic).catch(() => {});
+      return;
+    }
+    resetLogic();
+  });
+
+  return (
+    <FormRender<U, T>
+      submitButtonLoading={loading}
+      columns={columns!}
+      type={type}
+      ghost={ghost}
+      formRef={formRef!}
+      onSubmit={onSubmitHandler}
+      manualRequest={manualRequest}
+      onReset={onResetHandler}
+      dateFormatter={dateFormatter}
+      search={search}
+      form={{
+        autoFocusFirstInput: false,
+        ...form,
+        extraUrlParams: {
+          ...pageInfo,
+          ...form?.extraUrlParams,
+        },
+      }}
+      action={action}
+      bordered={isBordered('search', cardBordered)}
+    />
+  );
+};
+
+/**
+ * 只 Diff 需要用的 props，能减少 5 次左右的render
+ * @param prev
+ * @param next
+ * @see 因为 hooks 每次的 setFormSearch 都是新的，所以每次都触发 render
+ * @see action 也是同样的原因
+ * @returns
+ */
+const isPropsEqual = <T, U>(
+  prev: BaseFormProps<T, U> & { ghost?: boolean },
+  next: BaseFormProps<T, U> & { ghost?: boolean },
+): boolean => {
+  const diffProps = {
+    columns: prev.columns,
+    loading: prev.loading,
+    formRef: prev.formRef,
+    type: prev.type,
+    cardBordered: prev.cardBordered,
+    dateFormatter: prev.dateFormatter,
+    form: prev.form,
+    search: prev.search,
+    manualRequest: prev.manualRequest,
+  };
+  return isDeepEqualReact(diffProps, {
+    columns: next.columns,
+    formRef: next.formRef,
+    loading: next.loading,
+    type: next.type,
+    cardBordered: next.cardBordered,
+    dateFormatter: next.dateFormatter,
+    form: next.form,
+    search: next.search,
+    manualRequest: next.manualRequest,
+  });
+};
+
+export default memo(FormSearch, isPropsEqual) as typeof FormSearch;

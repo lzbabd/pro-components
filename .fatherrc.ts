@@ -1,47 +1,39 @@
-import { readdirSync } from 'fs';
-import { join } from 'path';
+import { defineConfig } from 'father';
 
-// utils must build before core
-// runtime must build before renderer-react
-// components dependencies order: form -> table -> list
-const headPkgs: string[] = [
-  'provider',
-  'utils',
-  'field',
-  'skeleton',
-  'form',
-  'table',
-  'card',
-  'list',
-];
-const tailPkgs = readdirSync(join(__dirname, 'packages')).filter(
-  (pkg) => pkg.charAt(0) !== '.' && !headPkgs.includes(pkg),
-);
+const targets = {
+  edge: 141,
+  firefox: 140,
+  chrome: 109,
+  safari: 18,
+  opera: 124,
+  electron: 39,
+};
 
-const type = process.env.BUILD_TYPE;
+const baseConfig = {
+  platform: 'browser', // 默认构建为 Browser 环境的产物
+  transformer: 'babel', // 默认使用 babel 以提供更好的兼容性
+  parallel: true,
+  targets,
+} as const;
 
-let config = {};
-
-if (type === 'lib') {
-  config = {
-    cjs: { type: 'babel', lazy: true },
-    esm: false,
-    pkgs: [...headPkgs, ...tailPkgs],
-  };
-}
-
-if (type === 'es') {
-  config = {
-    cjs: false,
-    esm: {
-      type: 'babel',
+export default defineConfig({
+  esm: {
+    output: 'es',
+    ...baseConfig,
+  },
+  cjs: {
+    output: 'lib',
+    ...baseConfig,
+  },
+  umd: {
+    name: 'ProComponents',
+    output: 'dist',
+    externals: {
+      react: 'React',
+      'react-dom': 'ReactDOM',
+      '^/antd/.*': 'antd',
+      '^/dayjs/.*': 'dayjs',
     },
-    pkgs: [...headPkgs, ...tailPkgs],
-    extraBabelPlugins: [
-      ['babel-plugin-import', { libraryName: 'antd', libraryDirectory: 'es', style: true }, 'antd'],
-      [require('./scripts/replaceLib')],
-    ],
-  };
-}
-
-export default config;
+    targets,
+  },
+});

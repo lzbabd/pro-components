@@ -1,8 +1,12 @@
 **/*.svg
-package.json
 .umi
 .umi-production
 **/dist
 **/lib
 **/es
 **\__snapshots__\**
+**\snapshots\**
+pnpm-lock.yaml
+server
+snapshots/**
+package.json

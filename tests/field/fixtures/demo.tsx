@@ -1,14 +1,13 @@
-import React from 'react';
+import type { ProFieldFCMode } from '@ant-design/pro-components';
+import { ProField as Field } from '@ant-design/pro-components';
 import { Descriptions } from 'antd';
-import Field from '@ant-design/pro-field';
-import moment from 'moment';
-import type { ProFieldFCMode } from '@ant-design/pro-utils';
+import dayjs from 'dayjs';
 
-export default ({ state, plain }: { state: ProFieldFCMode; plain: boolean }) => (
+export default ({ state }: { state: ProFieldFCMode }) => (
   <>
     <Descriptions column={2}>
       <Descriptions.Item label="文本">
-        <Field text="这是一段文本" valueType="text" mode={state} plain={plain} />
+        <Field text="这是一段文本" valueType="text" mode={state} />
       </Descriptions.Item>
       <Descriptions.Item label="头像">
         <Field
@@ -23,23 +22,22 @@ export default ({ state, plain }: { state: ProFieldFCMode; plain: boolean }) => 
       <Descriptions.Item label="日期区间">
         <Field
           text={[
-            moment('2019-11-16 12:50:26').add(-1, 'd').valueOf(),
-            moment('2019-11-16 12:50:26').valueOf(),
+            dayjs('2019-11-16 12:50:26').add(-1, 'd').valueOf(),
+            dayjs('2019-11-16 12:50:26').valueOf(),
           ]}
-          plain={plain}
           valueType="dateRange"
           mode={state}
         />
       </Descriptions.Item>
       <Descriptions.Item label="index">
-        <Field text={0} valueType="index" mode={state} plain={plain} />
-        <Field text={0} valueType="indexBorder" mode={state} plain={plain} />
+        <Field text={0} valueType="index" mode={state} />
+        <Field text={0} valueType="indexBorder" mode={state} />
       </Descriptions.Item>
       <Descriptions.Item label="金额">
-        <Field text="100" valueType="money" mode={state} plain={plain} />
+        <Field text="100" valueType="money" mode={state} />
       </Descriptions.Item>
       <Descriptions.Item label="百分比">
-        <Field text="100" valueType="percent" mode={state} plain={plain} />
+        <Field text="100" valueType="percent" mode={state} />
       </Descriptions.Item>
       <Descriptions.Item label="选择框">
         <Field
@@ -75,31 +73,28 @@ export default ({ state, plain }: { state: ProFieldFCMode; plain: boolean }) => 
         />
       </Descriptions.Item>
       <Descriptions.Item label="进度条">
-        <Field text="40" valueType="progress" mode={state} plain={plain} />
+        <Field text="40" valueType="progress" mode={state} />
       </Descriptions.Item>
       <Descriptions.Item label="日期时间">
         <Field
-          text={moment('2019-11-16 12:50:26').valueOf()}
+          text={dayjs('2019-11-16 12:50:26').valueOf()}
           valueType="dateTime"
           mode={state}
-          plain={plain}
         />
       </Descriptions.Item>
       <Descriptions.Item label="日期">
         <Field
-          text={moment('2019-11-16 12:50:26').valueOf()}
+          text={dayjs('2019-11-16 12:50:26').valueOf()}
           valueType="date"
           mode={state}
-          plain={plain}
         />
       </Descriptions.Item>
       <Descriptions.Item label="日期区间">
         <Field
           text={[
-            moment('2019-11-16 12:50:26').add(-1, 'd').valueOf(),
-            moment('2019-11-16 12:50:26').valueOf(),
+            dayjs('2019-11-16 12:50:26').add(-1, 'd').valueOf(),
+            dayjs('2019-11-16 12:50:26').valueOf(),
           ]}
-          plain={plain}
           valueType="dateTimeRange"
           mode={state}
         />
@@ -107,24 +102,22 @@ export default ({ state, plain }: { state: ProFieldFCMode; plain: boolean }) => 
       <Descriptions.Item label="dateRange">
         <Field
           text={[
-            moment('2019-11-16 12:50:26').add(-1, 'd').valueOf(),
-            moment('2019-11-16 12:50:26').valueOf(),
+            dayjs('2019-11-16 12:50:26').add(-1, 'd').valueOf(),
+            dayjs('2019-11-16 12:50:26').valueOf(),
           ]}
-          plain={plain}
           valueType="dateTimeRange"
           mode={state}
         />
       </Descriptions.Item>
       <Descriptions.Item label="时间">
         <Field
-          text={moment('2019-11-16 12:50:26').valueOf()}
-          plain={plain}
+          text={dayjs('2019-11-16 12:50:26').valueOf()}
           valueType="time"
           mode={state}
         />
       </Descriptions.Item>
       <Descriptions.Item label="密码">
-        <Field text="password" plain={plain} valueType="password" mode={state} />
+        <Field text="password" valueType="password" mode={state} />
       </Descriptions.Item>
       <Descriptions.Item label="代码块">
         <Field
@@ -135,7 +128,6 @@ Done in 9.70s.
           `}
           valueType="code"
           mode={state}
-          plain={plain}
         />
       </Descriptions.Item>
       <Descriptions.Item label="JSON 代码块">
@@ -150,7 +142,7 @@ Done in 9.70s.
     "strict": true,
     "forceConsistentCasingInFileNames": true,
     "noImplicitReturns": true,
-    "suppressImplicitAnyIndexErrors": true,
+
     "declaration": true,
     "skipLibCheck": true
   },
@@ -159,7 +151,6 @@ Done in 9.70s.
 `}
           valueType="jsonCode"
           mode={state}
-          plain={plain}
         />
       </Descriptions.Item>
     </Descriptions>

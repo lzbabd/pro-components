@@ -1,0 +1,905 @@
+import {
+  get,
+  set as namePathSet,
+  omit,
+  set,
+  useControlledState,
+  warning,
+} from '@rc-component/util';
+import type { FormInstance, FormItemProps, FormProps } from 'antd';
+import { ConfigProvider, Form, Spin } from 'antd';
+import type { NamePath } from 'antd/lib/form/interface';
+import { clsx } from 'clsx';
+import type dayjs from 'dayjs';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { ProConfigProvider } from '../../provider';
+import type {
+  ProFieldProps,
+  ProFormInstanceType,
+  ProRequestData,
+  SearchTransformKeyFn,
+} from '../../utils';
+import type { ProFieldValueType } from '../../utils/typing';
+import {
+  autoFocusToFirstChild,
+  conversionMomentValue,
+  isDeepEqualReact,
+  nanoid,
+  ProFormContext,
+  runFunction,
+  transformKeySubmitValue,
+  useFetchData,
+  usePrevious,
+  useRefFunction,
+  useStyle,
+} from '../../utils';
+import { useUrlSync } from './useUrlSync';
+import { FormListContext } from '../components/List';
+import FieldContext from '../FieldContext';
+import { GridContext, useGridHelpers } from '../helpers';
+import type {
+  FieldProps,
+  ProFormGridConfig,
+  ProFormGroupProps,
+} from '../typing';
+import { EditOrReadOnlyContext } from './EditOrReadOnlyContext';
+import type { SubmitterProps } from './Submitter';
+import Submitter from './Submitter';
+
+const { noteOnce } = warning;
+
+// Define ProFormInstance and ProFormRef
+export type ProFormInstance<T = any> = FormInstance<T> & ProFormInstanceType<T>;
+type ProFormRef<T> = ProFormInstance<T> & {
+  /** 原生 DOM 元素引用 */
+  nativeElement?: HTMLElement;
+  /** 聚焦方法 */
+  focus?: () => void;
+};
+
+export type CommonFormProps<
+  T = Record<string, any>,
+  U = Record<string, any>,
+> = {
+  /**
+   * @name 自定义提交的配置
+   *
+   * @example 不展示提交按钮和重置按钮
+   * submitter={false}
+   * @example 修改重置按钮的样式，并且隐藏提交按钮
+   * submitter={{resetButtonProps: { type: 'dashed'},submitButtonProps: { style: { display: 'none', }}}}
+   *
+   * @example 修改提交按钮和重置按钮的顺序
+   * submitter={{ render:(props,dom)=> [...dom]}}
+   *
+   * @example 修改提交和重置按钮文字
+   * submitter={{ searchConfig: { submitText: '提交2',resetText: '重置2'}}}
+   */
+  submitter?:
+    | SubmitterProps<{
+        form?: FormInstance<any>;
+      }>
+    | false;
+
+  /**
+   * @name 表单结束后调用
+   * @description 支持异步操作，更加方便
+   *
+   * @example onFinish={async (values) => { await save(values); return true }}
+   */
+  onFinish?: (formData: T) => Promise<boolean | void> | void;
+  /**
+   * @name 表单按钮的 loading 状态
+   */
+  loading?: boolean;
+  /**
+   * @name request 加载期间的自定义渲染
+   * @description 默认渲染居中的 `<Spin />`；传入 Skeleton 等组件可对齐 antd 5.18+ 的加载风格
+   *
+   * @example loadingRender={<Skeleton paragraph={{ rows: 4 }} />}
+   */
+  loadingRender?: React.ReactNode | (() => React.ReactNode);
+  /**
+   * @name 这是一个可选的属性(onLoadingChange)，它接受一个名为loading的参数，类型为boolean，表示加载状态是否改变。
+   * 当loading状态发生变化时，将会调用一个函数，这个函数接受这个loading状态作为参数，并且没有返回值(void)。
+   */
+  onLoadingChange?: (loading: boolean) => void;
+
+  /**
+   * @name 获取 ProFormInstance
+   *
+   * ProFormInstance 可以用来获取当前表单的一些信息
+   *
+   * @example 获取 name 的值 formRef.current.getFieldValue("name");
+   * @example 获取所有的表单值 formRef.current.getFieldsValue(true);
+   *
+   * - formRef.current.nativeElement => `2.29.1+`
+   */
+  formRef?:
+    | React.MutableRefObject<ProFormRef<T> | undefined>
+    | React.RefObject<ProFormRef<T> | undefined>;
+
+  /**
+   * @name 同步结果到 url 中
+   * */
+  syncToUrl?: boolean | ((values: T, type: 'get' | 'set') => T);
+
+  /**
+   * @name 当 syncToUrl 为 true，在页面回显示时，以url上的参数为主，默认为false
+   */
+  syncToUrlAsImportant?: boolean;
+
+  /**
+   * @name 额外的 url 参数 中
+   * */
+  extraUrlParams?: Record<string, any>;
+
+  /**
+   * 同步结果到 initialValues,默认为true如果为false，reset的时将会忽略从url上获取的数据
+   *
+   * @name 是否将 url 参数写入 initialValues
+   */
+  syncToInitialValues?: boolean;
+
+  /**
+   * 如果为 false,会原样保存。
+   *
+   * @default true
+   * @param 要不要值中的 Null 和 undefined
+   */
+  omitNil?: boolean;
+  /**
+   * 格式化 Date 的方式，默认转化为 string
+   *
+   * @example  dateFormatter="string" : Moment -> YYYY-MM-DD
+   * @example  dateFormatter="YYYY-MM-DD  HH:mm:SS" Moment -> YYYY-MM-DD  HH:mm:SS
+   * @example  dateFormatter="HH:mm:SS" Moment -> HH:mm:SS
+   * @example  dateFormatter="number" Moment -> timestamp
+   * @example  dateFormatter=false Moment -> Moment
+   * @example  dateFormatter={(value)=>value.format("YYYY-MM-DD")}
+   */
+  dateFormatter?:
+    | (string & {})
+    | 'string'
+    | 'number'
+    | ((value: dayjs.Dayjs, valueType: string) => string | number)
+    | false;
+
+  /**
+   * @name 表单初始化成功，比如布局，label等计算完成
+   * @example  (values)=>{ console.log(values) }
+   */
+  onInit?: (values: T, form: ProFormInstance<any>) => void;
+
+  /**
+   * @name 发起网络请求的参数
+   *
+   * @example  params={{productId: 1}}
+   * */
+  params?: U;
+  /**
+   * @name 发起网络请求的参数,返回值会覆盖给 initialValues
+   *
+   * @example async (params)=>{ return initialValues }
+   */
+  request?: ProRequestData<T, U>;
+
+  /** 是否回车提交 */
+  isKeyPressSubmit?: boolean;
+
+  /** 用于控制form 是否相同的key，高阶用法 */
+  formKey?: string;
+
+  /**
+   * @name自动选中第一项
+   * @description 只对有input的类型有效
+   */
+  autoFocusFirstInput?: boolean;
+
+  /**
+   *  @name 是否只读模式，对所有表单项生效
+   *  @description 优先低于表单项的 readonly
+   */
+  readonly?: boolean;
+} & ProFormGridConfig;
+
+export type BaseFormProps<T = Record<string, any>, U = Record<string, any>> = {
+  contentRender?: (
+    items: React.ReactNode[],
+    submitter: React.ReactElement<SubmitterProps> | undefined,
+    form: FormInstance<any>,
+  ) => React.ReactNode;
+  fieldProps?: FieldProps<unknown>;
+  proFieldProps?: ProFieldProps;
+  /** 表单初始化完成，form已经存在，可以进行赋值的操作了 */
+  onInit?: (values: T, form: ProFormInstance<any>) => void;
+  formItemProps?: FormItemProps;
+  groupProps?: ProFormGroupProps;
+  /** 是否回车提交 */
+  isKeyPressSubmit?: boolean;
+  /** Form 组件的类型，内部使用 */
+  formComponentType?: 'DrawerForm' | 'ModalForm' | 'QueryFilter' | 'LightFilter';
+} & Omit<FormProps, 'onFinish'> &
+  CommonFormProps<T, U>;
+
+
+/**
+ * It takes a name path and converts it to an array.
+ * @param {NamePath} name - The name of the form.
+ * @returns string[]
+ *
+ * a-> [a]
+ * [a] -> [a]
+ */
+const covertFormName = (name?: NamePath) => {
+  if (!name) return name;
+  if (Array.isArray(name)) return name;
+  return [name];
+};
+
+const defaultExtraUrlParams = {} as Record<string, any>;
+
+/**
+ * 构建 ProForm 格式化方法集合，供 formatValues useMemo 与 useImperativeHandle 共用，
+ * 消除两处完全相同的 ~80 行重复实现。
+ */
+function buildFormatValues(
+  getFormInstance: () => FormInstance<any> | undefined,
+  transformKey: (values: any, paramsOmitNil: boolean, parentKey?: NamePath) => any,
+  omitNil: boolean,
+) {
+  return {
+    getFieldsFormatValue: (allData?: true, omitNilParam?: boolean) => {
+      const instance = getFormInstance();
+      if (!instance) return {};
+      const values = instance.getFieldsValue(allData!);
+      return transformKey(values, omitNilParam !== undefined ? omitNilParam : omitNil);
+    },
+
+    getFieldFormatValue: (paramsNameList: NamePath = [], omitNilParam?: boolean) => {
+      const instance = getFormInstance();
+      if (!instance) return undefined;
+      const nameList = covertFormName(paramsNameList);
+      if (!nameList) throw new Error('nameList is require');
+      const value = instance.getFieldValue(nameList!);
+      const obj = nameList ? set({}, nameList as string[], value) : value;
+      // transformKey 会将 keys 重新和 nameList 拼接，所以要将 nameList 的首个元素弹出
+      const newNameList = [...nameList];
+      newNameList.shift();
+      const transformed = transformKey(
+        obj,
+        omitNilParam !== undefined ? omitNilParam : omitNil,
+        newNameList,
+      );
+      const result = get(transformed, nameList as string[]);
+      // 如果结果是对象，返回对象的值
+      if (result && typeof result === 'object' && !Array.isArray(result)) {
+        const objValue = Object.values(result)[0];
+        return objValue;
+      }
+      return result;
+    },
+
+    getFieldFormatValueObject: (paramsNameList?: NamePath, omitNilParam?: boolean) => {
+      const instance = getFormInstance();
+      if (!instance) return {};
+      const nameList = covertFormName(paramsNameList);
+      const value = instance.getFieldValue(nameList!);
+      const obj = nameList ? set({}, nameList as string[], value) : value;
+      // 与 getFieldFormatValue 一致：弹出 nameList 首段再交给 transformKey，
+      // 否则 conversionMomentValue 会得到重复的 parentPath（如可编辑表格行 key），
+      // fieldsValueType 匹配失败且极端情况下日期字段无法格式化为 string/number。
+      const newNameList = nameList ? [...nameList] : [];
+      newNameList.shift();
+      return transformKey(obj, omitNilParam !== undefined ? omitNilParam : omitNil, newNameList);
+    },
+
+    validateFieldsReturnFormatValue: async (nameList?: NamePath[], omitNilParam?: boolean) => {
+      const instance = getFormInstance();
+      if (!instance) return {};
+      if (!Array.isArray(nameList) && nameList) throw new Error('nameList must be array');
+      const values = await instance.validateFields(nameList);
+      const transformedKey = transformKey(
+        values,
+        omitNilParam !== undefined ? omitNilParam : omitNil,
+      );
+      return transformedKey ?? {};
+    },
+  };
+}
+
+function BaseFormComponents<T = Record<string, any>, U = Record<string, any>>(
+  props: BaseFormProps<T, U> & {
+    loading: boolean;
+    onUrlSyncReset: (
+      finalValues: Record<string, any>,
+      extraUrlParams?: Record<string, any>,
+    ) => void;
+    formatValue: (values: any, omit: boolean, parentKey?: NamePath) => any;
+    transformKey: (values: any, omit: boolean, parentKey?: NamePath) => any;
+  },
+) {
+  const {
+    children,
+    contentRender,
+    submitter,
+    fieldProps,
+    formItemProps,
+    groupProps,
+    formatValue,
+    transformKey,
+    formRef: propsFormRef,
+    onInit,
+    form,
+    loading,
+    formComponentType,
+    extraUrlParams = defaultExtraUrlParams,
+    syncToUrl,
+    onUrlSyncReset,
+    onReset,
+    omitNil = true,
+    isKeyPressSubmit,
+    autoFocusFirstInput = true,
+    grid,
+    rowProps,
+    colProps,
+    ...rest
+  } = props;
+
+  /**
+   * 获取 form 实例
+   */
+  const formInstance = Form.useFormInstance();
+
+  const { componentSize } = ConfigProvider?.useConfig?.() || {
+    componentSize: 'middle',
+  };
+
+  /** 内部持有当前 FormInstance，供 useImperativeHandle 和 submitter 使用 */
+  const formInstanceRef = useRef<ProFormRef<any>>((form || formInstance) as any);
+
+  /**
+   * 获取布局
+   */
+  const { RowWrapper } = useGridHelpers({ grid, rowProps });
+
+  // Always resolve the live instance. Containers such as Modal and Drawer can
+  // destroy and recreate their contents while keeping the public formRef. In
+  // that case, closing over `formInstance` leaves the formatting helpers bound
+  // to the already-destroyed form and makes them return an empty object.
+  const getFormInstance = useRefFunction(() => formInstanceRef.current);
+
+  // 消除 formatValues useMemo 与 useImperativeHandle 里的重复实现，统一由 buildFormatValues 生成
+  const formatValues = useMemo(
+    () => buildFormatValues(getFormInstance, transformKey, omitNil),
+    [omitNil, transformKey, getFormInstance],
+  );
+
+  const items = React.Children.toArray(children as any).map((item, index) => {
+    if (index === 0 && React.isValidElement(item) && autoFocusFirstInput) {
+      return autoFocusToFirstChild(item, autoFocusFirstInput) as React.ReactElement;
+    }
+    return item;
+  });
+
+  /** 计算 props 的对象 */
+  const submitterProps: SubmitterProps =
+    typeof submitter === 'boolean' || !submitter ? {} : submitter;
+
+  /** 渲染提交按钮与重置按钮 */
+  const submitterNode =
+    submitter === false ? undefined : (
+      <Submitter
+        key="submitter"
+        {...submitterProps}
+        onReset={() => {
+          const finalValues = transformKey(
+            formInstanceRef.current?.getFieldsValue(),
+            omitNil,
+          );
+          submitterProps?.onReset?.(finalValues);
+          onReset?.(finalValues);
+          // 如果 syncToUrl，清空 URL 上对应的参数
+          onUrlSyncReset(finalValues, extraUrlParams);
+        }}
+        submitButtonProps={
+          submitterProps.submitButtonProps === false
+            ? false
+            : {
+                loading,
+                ...submitterProps.submitButtonProps,
+              }
+        }
+      />
+    );
+
+  const wrapItems = grid ? <RowWrapper>{items}</RowWrapper> : items;
+  const content = contentRender
+    ? contentRender(wrapItems as any, submitterNode, formInstanceRef.current)
+    : wrapItems;
+
+  const preInitialValues = usePrevious(props.initialValues);
+
+  // 提示一个 initialValues ，问的人实在是太多了
+  useEffect(() => {
+    if (syncToUrl || !props.initialValues || !preInitialValues || rest.request)
+      return;
+    const isEqual = isDeepEqualReact(props.initialValues, preInitialValues);
+    noteOnce(
+      isEqual,
+      `initialValues 只在 form 初始化时生效，如果你需要异步加载推荐使用 request，或者 initialValues ? <Form/> : null `,
+    );
+    noteOnce(
+      isEqual,
+      `The initialValues only take effect when the form is initialized, if you need to load asynchronously recommended request, or the initialValues ? <Form/> : null `,
+    );
+  }, [props.initialValues]);
+
+  // 初始化给一个默认的 form；直接复用 buildFormatValues，消除重复实现
+  useImperativeHandle(
+    propsFormRef,
+    () => ({
+      ...formInstanceRef.current,
+      ...buildFormatValues(() => formInstanceRef.current, transformKey, omitNil),
+    }),
+    [omitNil, transformKey, propsFormRef],
+  );
+  useEffect(() => {
+    const initialFormValues = formatValue(
+      formInstanceRef.current?.getFieldsValue?.(true),
+      omitNil,
+    );
+    onInit?.(initialFormValues, {
+      ...formInstanceRef.current,
+      ...formatValues,
+    });
+  }, []);
+
+  return (
+    <ProFormContext.Provider
+      value={{
+        ...formatValues,
+        formRef: formInstanceRef,
+      }}
+    >
+      <ConfigProvider componentSize={rest.size || componentSize}>
+        <GridContext.Provider value={{ grid, colProps }}>
+          {rest.component !== false && (
+            <input
+              type="text"
+              style={{
+                display: 'none',
+              }}
+            />
+          )}
+          {content}
+        </GridContext.Provider>
+      </ConfigProvider>
+    </ProFormContext.Provider>
+  );
+}
+
+/** 自动的formKey 防止重复 */
+let requestFormCacheId = 0;
+
+export function BaseForm<T = Record<string, any>, U = Record<string, any>>(
+  props: BaseFormProps<T, U>,
+) {
+  const {
+    extraUrlParams = defaultExtraUrlParams,
+    syncToUrl,
+    isKeyPressSubmit,
+    syncToUrlAsImportant = false,
+    syncToInitialValues = true,
+    children,
+    contentRender,
+    submitter,
+    fieldProps,
+    proFieldProps,
+    formItemProps,
+    groupProps,
+    dateFormatter = 'string',
+    formRef: propsFormRef,
+    onInit,
+    form,
+    formComponentType,
+    onReset,
+    grid,
+    rowProps,
+    colProps,
+    omitNil = true,
+    request,
+    params,
+    initialValues,
+    formKey = requestFormCacheId,
+    readonly,
+    onLoadingChange,
+    loading: propsLoading,
+    loadingRender,
+    ...propRest
+  } = props;
+  const formRef = useRef<ProFormRef<any>>({} as any);
+  const [loading, setLoadingInner] = useControlledState<boolean>(
+    false,
+    propsLoading,
+  );
+
+  /**
+   * 使用 useRefFunction 包装回调，确保引用稳定
+   */
+  const onLoadingChangeCallback = useRefFunction((l: boolean) => {
+    onLoadingChange?.(l);
+  });
+
+  /**
+   * 包装 setLoading，使用 queueMicrotask 延迟回调调用
+   * 避免在渲染阶段调用外部回调导致的 React 警告
+   */
+  const setLoading = useRefFunction(
+    (updater: boolean | ((prev: boolean) => boolean)) => {
+      setLoadingInner((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (p: boolean) => boolean)(prev)
+            : updater;
+        queueMicrotask(() => {
+          onLoadingChangeCallback(next);
+        });
+        return next;
+      });
+    },
+  );
+
+  const { urlParamsMergeInitialValues, onUrlSyncReset, onUrlSyncFinish } =
+    useUrlSync({ syncToUrl, syncToInitialValues, extraUrlParams });
+
+  const curFormKey = useRef<string>(nanoid());
+
+  useEffect(() => {
+    requestFormCacheId += 1;
+  }, []);
+  const [initialData, initialDataLoading] = useFetchData<T, U>({
+    request,
+    params,
+    proFieldKey: formKey,
+  });
+
+  const { getPrefixCls } = useContext(ConfigProvider.ConfigContext);
+  const prefixCls = getPrefixCls('pro-form');
+  // css
+  const { wrapSSR, hashId } = useStyle('ProForm', (token) => {
+    return {
+      [`.${prefixCls}`]: {
+        [`> div:not(${token.proComponentsCls}-form-light-filter)`]: {
+          '.pro-field': {
+            maxWidth: '100%',
+            '@media screen and (max-width: 575px)': {
+              // 减少了 form 的 padding
+              maxWidth: 'calc(93vw - 48px)',
+            },
+            // 适用于短数字，短文本或者选项
+            '&-xs': {
+              width: 104,
+            },
+            '&-s': {
+              width: 216,
+            },
+            // 适用于较短字段录入、如姓名、电话、ID 等。
+            '&-sm': {
+              width: 216,
+            },
+            '&-m': {
+              width: 328,
+            },
+            // 标准宽度，适用于大部分字段长度
+            '&-md': {
+              width: 328,
+            },
+            '&-l': {
+              width: 440,
+            },
+            // 适用于较长字段录入，如长网址、标签组、文件路径等。
+            '&-lg': {
+              width: 440,
+            },
+            // 适用于长文本录入，如长链接、描述、备注等，通常搭配自适应多行输入框或定高文本域使用。
+            '&-xl': {
+              width: 552,
+            },
+          },
+        },
+      },
+    };
+  });
+
+  /** 保存 transformKeyRef，用于对表单key transform */
+  const transformKeyRef = useRef<
+    Record<string, SearchTransformKeyFn | undefined>
+  >({});
+
+  const fieldsValueType = useRef<
+    Record<
+      string,
+      {
+        valueType: ProFieldValueType;
+        dateFormat: string;
+      }
+    >
+  >({});
+
+  /** 使用 callback 的类型 */
+  const transformKey = useRefFunction(
+    (values: any, paramsOmitNil: boolean, parentKey?: NamePath) => {
+      if (!values || typeof values !== 'object') {
+        return values;
+      }
+
+      return transformKeySubmitValue(
+        conversionMomentValue(
+          values,
+          dateFormatter,
+          fieldsValueType.current,
+          paramsOmitNil,
+          parentKey,
+        ),
+        transformKeyRef.current,
+      );
+    },
+  );
+
+  const formatValue = useRefFunction(
+    (values: any, paramsOmitNil: boolean, parentKey?: NamePath) => {
+      if (!values || typeof values !== 'object') return values;
+      return conversionMomentValue(
+        values,
+        dateFormatter,
+        fieldsValueType.current,
+        paramsOmitNil,
+        parentKey,
+      );
+    },
+  );
+
+  const getPopupContainer = useMemo(() => {
+    if (typeof window === 'undefined') return undefined;
+    // 如果在 drawerForm 和  modalForm 里就渲染dom到父节点里
+    // modalForm 可能高度太小不适合
+    if (formComponentType && ['DrawerForm'].includes(formComponentType)) {
+      return (e: HTMLElement) => e.parentNode || document.body;
+    }
+    return undefined;
+  }, [formComponentType]);
+
+  const onFinish = useRefFunction(async () => {
+    // 没设置 onFinish 就不执行
+    if (!propRest.onFinish) return;
+    // 防止重复提交
+    if (loading) return;
+    try {
+      setLoading(true);
+      const finalValues = formRef?.current?.getFieldsFormatValue?.() || {};
+      const response = propRest.onFinish(finalValues);
+      let responseResult: any;
+      if (
+        response &&
+        typeof response === 'object' &&
+        typeof response.then === 'function'
+      ) {
+        try {
+          responseResult = await response;
+        } catch (error) {
+          // Promise 被拒绝时重置 loading 并向上抛出，不同步 URL
+          setLoading(false);
+          throw error;
+        }
+        setLoading(false);
+      } else {
+        responseResult = response;
+        setLoading(false);
+      }
+      // 仅在 onFinish 返回 truthy 时才同步 URL，失败时不更新
+      if (responseResult) {
+        const allFieldKeys = Object.keys(
+          formRef?.current?.getFieldsFormatValue?.(true, false) || {},
+        );
+        onUrlSyncFinish(finalValues, allFieldKeys, extraUrlParams);
+      }
+    } catch (error) {
+      setLoading(false);
+      // #9019 不再静默吞掉 onFinish 的异常：
+      // 保留错误可见性（console.error），同时避免 async 事件回调里 re-throw
+      // 造成的 unhandled rejection（会中断用户页面）。若需要感知失败，
+      // 推荐在 onFinish 内部自行 try/catch。
+      // eslint-disable-next-line no-console
+      console.error('[ProForm] onFinish error:', error);
+    }
+  });
+
+  // 初始化给一个默认的 form
+  useImperativeHandle(propsFormRef, () => {
+    return formRef.current;
+  }, [!initialData]);
+
+  const requestInitialValues = syncToUrlAsImportant
+    ? {
+        ...initialValues,
+        ...initialData,
+        ...urlParamsMergeInitialValues,
+      }
+    : {
+        ...urlParamsMergeInitialValues,
+        ...initialValues,
+        ...initialData,
+      };
+
+  useEffect(() => {
+    if (!request || !initialData || !formRef.current) return;
+
+    // An externally supplied FormInstance survives Modal/Drawer destruction.
+    // Clear values from the previous request before applying the new record so
+    // omitted fields cannot leak from one edit session into the next.
+    const previousValues = formRef.current.getFieldsValue?.(true) || {};
+    const clearedValues = Object.keys(previousValues).reduce<
+      Record<string, undefined>
+    >((values, key) => {
+      values[key] = undefined;
+      return values;
+    }, {});
+    formRef.current.setFieldsValue?.({
+      ...clearedValues,
+      ...requestInitialValues,
+    });
+  }, [initialData]);
+
+  if (request && initialDataLoading) {
+    if (loadingRender !== undefined) {
+      return (
+        <>
+          {typeof loadingRender === 'function' ? loadingRender() : loadingRender}
+        </>
+      );
+    }
+    return (
+      <div style={{ paddingTop: 50, paddingBottom: 50, textAlign: 'center' }}>
+        <Spin />
+      </div>
+    );
+  }
+
+  return wrapSSR(
+    <EditOrReadOnlyContext.Provider
+      value={{
+        mode: props.readonly ? 'read' : 'edit',
+      }}
+    >
+      <ProConfigProvider needDeps>
+        {/* // 增加国际化的能力，与 table 组件可以统一 */}
+        <FieldContext.Provider
+          value={{
+            formRef,
+            fieldProps,
+            proFieldProps,
+            formItemProps,
+            groupProps,
+            formComponentType,
+            getPopupContainer,
+            formKey: curFormKey.current,
+            setFieldValueType: (
+              name,
+              { valueType = 'text', dateFormat, convertValue, transform },
+            ) => {
+              if (!Array.isArray(name)) return;
+
+              // Store transform function in the correct nested structure
+              if (transform) {
+                transformKeyRef.current = namePathSet(
+                  transformKeyRef.current,
+                  name,
+                  convertValue
+                    ? (value: any, namePath: string[], allValues: any) => {
+                        let convertedValue = value;
+                        try {
+                          convertedValue = convertValue(value, namePath);
+                        } catch {
+                          // The form store may already contain the component
+                          // value after user interaction (#9285).
+                        }
+                        return transform(
+                          convertedValue,
+                          namePath,
+                          allValues,
+                        );
+                      }
+                    : transform,
+                );
+              }
+
+              // formList is a container. Registering metadata at its path
+              // would overwrite the nested field metadata registered by its
+              // children (for example detailList.0.deliveryDate).
+              if (valueType !== 'formList') {
+                fieldsValueType.current = namePathSet(
+                  fieldsValueType.current,
+                  name,
+                  {
+                    valueType,
+                    dateFormat,
+                  },
+                );
+              }
+            },
+          }}
+        >
+          <FormListContext.Provider value={{}}>
+            <Form
+              onKeyDown={(event) => {
+                if (!isKeyPressSubmit) return;
+                if (event.key === 'Enter') {
+                  formRef.current?.submit();
+                }
+              }}
+              autoComplete="off"
+              form={form}
+              // 默认注入唯一 form name：antd Form.Item 会以 `${name}_${field}` 生成 input id，
+              // 页面出现多个 ProForm（或同名 ProFormText）时避免 id 重复（#9144）。
+              // 用户显式传入的 name 在 propRest 展开中优先级更高。
+              name={curFormKey.current}
+              {...omit(propRest, [
+                'ref',
+                'labelWidth',
+                'autoFocusFirstInput',
+                'rootClassName',
+              ] as any[])}
+              ref={(instance) => {
+                if (!formRef.current) return;
+                formRef.current.nativeElement = instance?.nativeElement;
+                formRef.current.focus = () => {
+                  // 聚焦到表单的第一个输入框
+                  const firstInput = instance?.nativeElement?.querySelector(
+                    'input, textarea, select',
+                  ) as HTMLElement;
+                  firstInput?.focus();
+                };
+              }}
+              // 组合 urlParamsMergeInitialValues 和 initialValues
+              initialValues={requestInitialValues}
+              onValuesChange={(changedValues, values) => {
+                propRest?.onValuesChange?.(
+                  transformKey(changedValues, false),
+                  transformKey(values, false),
+                );
+              }}
+              className={props.className}
+              rootClassName={clsx(prefixCls, hashId, props.rootClassName)}
+              onFinish={onFinish}
+            >
+              <BaseFormComponents<T, U>
+                formatValue={formatValue}
+                transformKey={transformKey}
+                autoComplete="off"
+                loading={
+                  loading || !!(request && !initialData && initialDataLoading)
+                }
+                onUrlSyncReset={onUrlSyncReset}
+                {...props}
+                formRef={formRef}
+                initialValues={{
+                  ...initialValues,
+                  ...initialData,
+                }}
+              />
+            </Form>
+          </FormListContext.Provider>
+        </FieldContext.Provider>
+      </ProConfigProvider>
+    </EditOrReadOnlyContext.Provider>,
+  );
+}

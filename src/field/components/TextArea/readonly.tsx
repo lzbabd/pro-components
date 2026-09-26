@@ -1,0 +1,44 @@
+import { omit } from '@rc-component/util';
+import { ConfigProvider } from 'antd';
+import { clsx } from 'clsx';
+import React, { useContext } from 'react';
+import { useStyle } from '../../../utils';
+import type { ProFieldFC } from '../../types';
+
+/**
+ * Input.TextArea 只读模式时渲染的组件
+ *
+ * @param
+ */
+const FieldTextAreaReadonly: ProFieldFC<{
+  text: string;
+}> = ({ text, fieldProps }, ref) => {
+  const { getPrefixCls } = useContext(ConfigProvider.ConfigContext);
+  const readonlyClassName = getPrefixCls('pro-field-readonly');
+  const compClassName = `${readonlyClassName}-textarea`;
+
+  const { wrapSSR, hashId } = useStyle('TextArea', () => {
+    return {
+      [`.${compClassName}`]: {
+        display: 'inline-block',
+        lineHeight: '1.5715',
+        maxWidth: '100%',
+        overflowWrap: 'anywhere',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      },
+    };
+  });
+
+  return wrapSSR(
+    <span
+      ref={ref}
+      className={clsx(hashId, readonlyClassName, compClassName)}
+      {...omit(fieldProps, ['autoSize', 'classNames', 'showCount', 'styles'])}
+    >
+      {text ?? '-'}
+    </span>,
+  );
+};
+
+export default React.forwardRef(FieldTextAreaReadonly);

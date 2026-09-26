@@ -1,11 +1,9 @@
-import { mount } from 'enzyme';
-import React, { useContext } from 'react';
-import ProProvider from '@ant-design/pro-provider';
-import ProTable from '@ant-design/pro-table';
-import { act } from 'react-dom/test-utils';
+import { ProProvider, ProTable } from '@ant-design/pro-components';
+import { cleanup, render, waitFor } from '@testing-library/react';
 import { Input } from 'antd';
-
-import { waitForComponentToPaint } from '../util';
+import { act, useContext } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { waitForWaitTime } from '../util';
 
 const Demo = () => {
   const values = useContext(ProProvider);
@@ -16,7 +14,7 @@ const Demo = () => {
         valueTypeMap: {
           link: {
             render: (text) => <a>{text}</a>,
-            renderFormItem: (text, props) => (
+            formItemRender: (text, props) => (
               <Input placeholder="请输入链接" {...props?.fieldProps} />
             ),
           },
@@ -49,16 +47,20 @@ const Demo = () => {
   );
 };
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('Table valueEnum', () => {
   it('🎏 dynamic enum test', async () => {
-    const html = mount(
+    const html = render(
       <ProTable
         size="small"
         columns={[
           {
             title: '状态',
             dataIndex: 'status',
-            hideInForm: true,
+            valueType: 'select',
             valueEnum: {},
             fieldProps: {
               open: true,
@@ -76,43 +78,129 @@ describe('Table valueEnum', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
+
+    // 等待组件完全渲染
+    await waitForWaitTime(1000);
+
+    // 重新渲染组件，添加 valueEnum
+    act(() => {
+      html.rerender(
+        <ProTable
+          size="small"
+          request={async () => ({
+            data: [
+              {
+                status: 2,
+                key: '1',
+              },
+            ],
+          })}
+          rowKey="key"
+          columns={[
+            {
+              title: '状态',
+              valueType: 'select',
+              dataIndex: 'status',
+              valueEnum: {
+                0: { text: '关闭', status: 'Default' },
+                1: { text: '运行中', status: 'Processing', disabled: true },
+                2: { text: '已上线', status: 'Success' },
+                3: { text: '异常', status: 'Error' },
+              },
+              fieldProps: {
+                open: true,
+              },
+            },
+          ]}
+        />,
+      );
+    });
+
+    // 等待重新渲染完成
+    await waitForWaitTime(1000);
+
+    await waitFor(() => {
+      return html.findAllByText('已上线');
+    });
 
     act(() => {
-      html.setProps({
-        columns: [
-          {
-            title: '状态',
-            dataIndex: 'status',
-            hideInForm: true,
-            valueEnum: {
-              0: { text: '关闭', status: 'Default' },
-              1: { text: '运行中', status: 'Processing', disabled: true },
-              2: { text: '已上线', status: 'Success' },
-              3: { text: '异常', status: 'Error' },
-            },
-            fieldProps: {
-              open: true,
-            },
-          },
-        ],
-      });
+      html.baseElement
+        .querySelector<HTMLDivElement>('form.ant-form div.ant-select')
+        ?.click();
     });
-    await waitForComponentToPaint(html, 200);
+
+    await waitForWaitTime(500);
+
     act(() => {
-      html.find('form.ant-form div.ant-select').simulate('click');
+      expect(
+        html.baseElement.querySelector<HTMLDivElement>(
+          'div.ant-select-dropdown',
+        )?.textContent,
+      ).toBe('01关闭运行中已上线异常');
     });
-    act(() => {
-      expect(html.find('div.ant-select-dropdown').render()).toMatchSnapshot();
-    });
-    expect(html.find('td.ant-table-cell').text()).toBe('已上线');
+
+    console.log(html.baseElement.querySelector('table')?.innerHTML);
+
+    expect(
+      html.baseElement.querySelector<HTMLDivElement>('td.ant-table-cell')
+        ?.textContent,
+    ).toBe('已上线');
   });
 
   it('🎏 customization valueType', async () => {
-    const html = mount(<Demo />);
-    await waitForComponentToPaint(html, 1200);
-    act(() => {
-      expect(html.render()).toMatchSnapshot();
-    });
+    const html = render(<Demo />);
+    await waitForWaitTime(1200);
+    // 自定义 valueType 'link' 通过 ProProvider.valueTypeMap 注册
+    // 渲染时应将 name 字段以 <a> 标签呈现
+    const cellLink = html.baseElement.querySelector(
+      'td.ant-table-cell a',
+    );
+    expect(cellLink).toBeTruthy();
+    expect(cellLink?.textContent).toBe('test');
+  });
+
+  it('🎏 dynamic request', async () => {
+    const request = vi.fn();
+    render(
+      <ProTable
+        size="small"
+        columns={[
+          {
+            title: '状态',
+            dataIndex: 'status',
+            valueType: 'select',
+            valueEnum: {},
+            fieldProps: {
+              open: true,
+            },
+            request: async (_, config) => {
+              request(config.record);
+              return [];
+            },
+          },
+        ]}
+        rowKey="key"
+        request={async () => {
+          return {
+            data: [
+              {
+                status: 2,
+                key: '1',
+              },
+            ],
+          };
+        }}
+      />,
+    );
+
+    // 等待组件完全渲染和异步操作完成
+    await waitForWaitTime(1000);
+
+    await waitFor(
+      () => {
+        expect(request).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 5000 },
+    );
   });
 });

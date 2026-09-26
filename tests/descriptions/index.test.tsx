@@ -1,15 +1,22 @@
-import { mount } from 'enzyme';
-import React, { useRef } from 'react';
-import { Button } from 'antd';
-import ProDescriptions from '@ant-design/pro-descriptions';
-import type { ProCoreActionType } from '@ant-design/pro-utils';
-import { act } from 'react-dom/test-utils';
-
-import { waitForComponentToPaint, waitTime } from '../util';
+import type { ProCoreActionType } from '@ant-design/pro-components';
+import { ProDescriptions } from '@ant-design/pro-components';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import { Badge, Button, Input } from 'antd';
+import React, { act } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+afterEach(() => {
+  cleanup();
+});
 
 describe('descriptions', () => {
-  it('🥩  descriptions render valueEnum when data = 0', async () => {
-    const html = mount(
+  it('🥩 descriptions render valueEnum when data = 0', async () => {
+    const { container } = render(
       <ProDescriptions
         columns={[
           {
@@ -30,13 +37,17 @@ describe('descriptions', () => {
         })}
       />,
     );
-    await waitForComponentToPaint(html, 200);
-    expect(html.find('span.ant-badge-status-text').text()).toBe('关闭');
+
+    await waitFor(() =>
+      expect(
+        container.querySelector('span.ant-badge-status-text')?.innerHTML,
+      ).toBe('关闭'),
+    );
   });
 
   it('🎏 onLoadingChange test', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+    render(
       <ProDescriptions
         size="small"
         onLoadingChange={fn}
@@ -53,12 +64,14 @@ describe('descriptions', () => {
         }}
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(fn).toBeCalled();
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalled();
+    });
   });
 
   it('🎏 loading test', async () => {
-    const html = mount(
+    const html = render(
       <ProDescriptions
         columns={[
           {
@@ -68,41 +81,72 @@ describe('descriptions', () => {
           },
         ]}
         request={async () => {
-          return new Promise((resolve) => {
+          return new Promise<{ data: Record<string, unknown> }>((resolve) => {
             setTimeout(() => {
-              resolve({ data: [] });
+              resolve({ data: {} });
             }, 5000);
           });
         }}
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(html.find('.ant-skeleton').exists()).toBeTruthy();
+
+    await waitFor(() => {
+      expect(!!html.baseElement.querySelector('.ant-skeleton')).toBeTruthy();
+    });
 
     act(() => {
-      html.setProps({
-        loading: false,
-      });
+      html.rerender(
+        <ProDescriptions
+          columns={[
+            {
+              title: 'money',
+              dataIndex: 'money',
+              valueType: 'money',
+            },
+          ]}
+          loading={false}
+          request={async () => {
+            return new Promise<{ data: Record<string, unknown> }>((resolve) => {
+              setTimeout(() => {
+                resolve({ data: {} });
+              }, 5000);
+            });
+          }}
+        />,
+      );
     });
-    await waitForComponentToPaint(html, 1200);
-    // props 指定为 false 后，无论 request 完成与否都不会出现 spin
-    expect(html.find('.ant-skeleton').exists()).toBeFalsy();
+
+    await waitFor(() => {
+      // props 指定为 false 后，无论 request 完成与否都不会出现 spin
+      expect(!!html.baseElement.querySelector('.ant-skeleton')).toBeFalsy();
+    });
   });
 
   it('🥩 test reload', async () => {
-    const fn = jest.fn();
+    const fn = vi.fn();
+
+    const actionRef = React.createRef<ProCoreActionType>();
     const Reload = () => {
-      const actionRef = useRef<ProCoreActionType>();
       return (
         <ProDescriptions
           actionRef={actionRef}
           title="高级定义列表 request"
           request={async () => {
             fn();
-            await waitTime(200);
-            return Promise.resolve({
-              success: true,
-              data: { id: '这是一段文本', date: '20200730', money: '12121' },
+            return new Promise<{
+              success: boolean;
+              data: { id: string; date: string; money: string };
+            }>((resolve) => {
+              setTimeout(() => {
+                resolve({
+                  success: true,
+                  data: {
+                    id: '这是一段文本',
+                    date: '20200730',
+                    money: '12121',
+                  },
+                });
+              }, 2000);
             });
           }}
           extra={
@@ -113,35 +157,57 @@ describe('descriptions', () => {
                 actionRef.current?.reload();
               }}
             >
-              修改
+              刷新
             </Button>
           }
-        >
-          <ProDescriptions.Item label="文本" dataIndex="id" />
-          <ProDescriptions.Item dataIndex="date" label="日期" valueType="date" />
-          <ProDescriptions.Item label="money" dataIndex="money" valueType="money" />
-        </ProDescriptions>
+          columns={[
+            { label: '文本', dataIndex: 'id' },
+            { dataIndex: 'date', label: '日期', valueType: 'date' },
+            {
+              label: 'money',
+              dataIndex: 'money',
+              valueType: 'money',
+              formItemRender: () => <Input />,
+            },
+          ]}
+        />
       );
     };
-    const html = mount(<Reload />);
-    await waitForComponentToPaint(html, 300);
+    const html = render(<Reload />);
+
+    // 等待数据加载完成，而不是直接查找文本
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    // 等待文本出现，增加超时时间以处理2秒延迟
+    await waitFor(
+      () => {
+        expect(html.getByText('这是一段文本')).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
 
     act(() => {
-      html.find('Button#reload').simulate('click');
+      html.queryByText('刷新')?.click();
     });
     act(() => {
-      html.find('Button#reload').simulate('click');
+      actionRef.current?.reload();
     });
-    await waitForComponentToPaint(html);
+    act(() => {
+      actionRef.current?.reload();
+    });
 
-    // 因为有 loading 的控制，所有只会触发两次
-    expect(fn).toBeCalledTimes(2);
+    await waitFor(() => {
+      // 因为有 loading 的控制，所有只会触发两次
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('🥩 test reload by params', async () => {
-    const fn = jest.fn();
+    const fn = vi.fn();
 
-    const html = mount(
+    const html = render(
       <ProDescriptions
         title="高级定义列表 request"
         request={async () => {
@@ -156,29 +222,64 @@ describe('descriptions', () => {
             修改
           </Button>
         }
-      >
-        <ProDescriptions.Item label="文本" dataIndex="id" />
-        <ProDescriptions.Item dataIndex="date" label="日期" valueType="date" />
-        <ProDescriptions.Item label="money" dataIndex="money" valueType="money" />
-      </ProDescriptions>,
+        columns={[
+          { label: '文本', dataIndex: 'id' },
+          { dataIndex: 'date', label: '日期', valueType: 'date' },
+          { label: 'money', dataIndex: 'money', valueType: 'money' },
+        ]}
+      />,
     );
-    await waitForComponentToPaint(html, 300);
 
-    act(() => {
-      html.setProps({
-        params: { name: 'qixian' },
-      });
+    // 等待数据加载完成
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
     });
 
-    await waitForComponentToPaint(html);
+    // 等待文本出现
+    await waitFor(() => {
+      expect(html.getByText('这是一段文本')).toBeInTheDocument();
+    });
 
-    expect(fn).toBeCalledTimes(2);
+    act(() => {
+      html.rerender(
+        <ProDescriptions
+          title="高级定义列表 request"
+          request={async () => {
+            fn();
+            return Promise.resolve({
+              success: true,
+              data: { id: '这是一段文本', date: '20200730', money: '12121' },
+            });
+          }}
+          extra={
+            <Button type="link" id="reload">
+              修改
+            </Button>
+          }
+          params={{ name: 'qixian' }}
+          columns={[
+            { label: '文本', dataIndex: 'id' },
+            { dataIndex: 'date', label: '日期', valueType: 'date' },
+            { label: 'money', dataIndex: 'money', valueType: 'money' },
+          ]}
+        />,
+      );
+    });
+
+    // 等待重新渲染后的文本出现
+    await waitFor(() => {
+      expect(html.getByText('这是一段文本')).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('🥩 test request error', async () => {
-    const fn = jest.fn();
+    const fn = vi.fn();
 
-    const html = mount(
+    render(
       <ProDescriptions
         title="高级定义列表 request"
         request={async () => {
@@ -190,38 +291,51 @@ describe('descriptions', () => {
             修改
           </Button>
         }
-      >
-        <ProDescriptions.Item label="文本" dataIndex="id" />
-        <ProDescriptions.Item dataIndex="date" label="日期" valueType="date" />
-        <ProDescriptions.Item label="money" dataIndex="money" valueType="money" />
-      </ProDescriptions>,
+        columns={[
+          { label: '文本', dataIndex: 'id' },
+          { dataIndex: 'date', label: '日期', valueType: 'date' },
+          { label: 'money', dataIndex: 'money', valueType: 'money' },
+        ]}
+      />,
     );
-    await waitForComponentToPaint(html, 300);
 
-    expect(fn).toBeCalledTimes(1);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
   });
 
-  it('🏊‍♂️ Progress', () => {
-    const html = mount(
-      <ProDescriptions>
-        <ProDescriptions.Item label="进度条1" valueType="progress">
-          40
-        </ProDescriptions.Item>
-        <ProDescriptions.Item label="进度条2" valueType="progress">
-          -1
-        </ProDescriptions.Item>
-        <ProDescriptions.Item label="进度条3" valueType="progress">
-          100
-        </ProDescriptions.Item>
-      </ProDescriptions>,
+  it('🏊 Progress', async () => {
+    const html = render(
+      <ProDescriptions
+        columns={[
+          { label: '进度条1', valueType: 'progress', children: 40 },
+          { label: '进度条2', valueType: 'progress', children: -1 },
+          { label: '进度条3', valueType: 'progress', children: 100 },
+        ]}
+      />,
     );
-    expect(html.find('.ant-progress-text').at(0).text()).toEqual('40%');
-    expect(html.find('.ant-progress-text').at(1).find('.anticon-close-circle')).toBeTruthy();
-    expect(html.find('.ant-progress-text').at(1).find('.anticon-check-circle')).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector('.ant-progress-indicator')?.textContent,
+      ).toEqual('40%');
+    });
+
+    await waitFor(() => {
+      expect(
+        !!html.baseElement
+          .querySelectorAll('.ant-progress-indicator')?.[1]
+          ?.querySelector('.anticon-close-circle'),
+      ).toBeTruthy();
+      expect(
+        !!html.baseElement
+          .querySelectorAll('.ant-progress-indicator')?.[2]
+          ?.querySelector('.anticon-check-circle'),
+      ).toBeTruthy();
+    });
   });
 
-  it('🏊‍♂️ ProDescriptions support order', () => {
-    const html = mount(
+  it('🏊 ProDescriptions support order', async () => {
+    const html = render(
       <ProDescriptions
         dataSource={{
           title: 'test',
@@ -233,21 +347,196 @@ describe('descriptions', () => {
             valueType: 'text',
             order: 100,
           },
+          { order: 9, label: '进度条1', valueType: 'progress', children: 40 },
+          { label: '进度条2', valueType: 'progress', children: -1 },
+          { order: 8, label: '进度条3', valueType: 'progress', children: 100 },
         ]}
-      >
-        <ProDescriptions.Item order={9} label="进度条1" valueType="progress">
-          40
-        </ProDescriptions.Item>
-        <ProDescriptions.Item label="进度条2" valueType="progress">
-          -1
-        </ProDescriptions.Item>
-        <ProDescriptions.Item order={8} label="进度条3" valueType="progress">
-          100
-        </ProDescriptions.Item>
-      </ProDescriptions>,
+      />,
     );
-    act(() => {
-      expect(html.render()).toMatchSnapshot();
+    // 验证 order 排序：order 大的排前面（标题 order=100 最大，应在第一位）
+    // 没有 order 的应排到最后（进度条2）
+    const labels = html.baseElement.querySelectorAll(
+      '.ant-descriptions-item-label',
+    );
+    expect(labels.length).toBe(4);
+    expect(labels[0].textContent).toBe('标题');
+    expect(labels[1].textContent).toBe('进度条1');
+    expect(labels[2].textContent).toBe('进度条3');
+    expect(labels[3].textContent).toBe('进度条2');
+  });
+
+  it('📝 typography support and copy', async () => {
+    const wrapper = render(
+      <ProDescriptions
+        title="dataSource and columns"
+        dataSource={{
+          id: '这是一段文本columns',
+          date: '20200809',
+          money: '1212100',
+          state: 'all',
+          state2: 'open',
+        }}
+        columns={[
+          {
+            title: '文本',
+            key: 'text',
+            dataIndex: 'id',
+            ellipsis: true,
+            copyable: true,
+          },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement.querySelector(
+          'span.ant-descriptions-item-content button.ant-typography-copy',
+        ),
+      ).toBeTruthy();
     });
+
+    wrapper.rerender(
+      <ProDescriptions
+        title="dataSource and columns"
+        dataSource={{
+          id: '这是一段文本columns',
+          date: '20200809',
+          money: '1212100',
+          state: 'all',
+          state2: 'open',
+        }}
+        columns={[
+          {
+            title: '文本',
+            key: 'text',
+            dataIndex: 'id',
+          },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement.querySelectorAll(
+          '.ant-descriptions-item-content .ant-typography-copy',
+        ).length,
+      ).toBe(0);
+    });
+
+    wrapper.unmount();
+  });
+
+  it('🐛 #9141 formats ISO timestamps with microseconds and ellipsis', async () => {
+    const wrapper = render(
+      <ProDescriptions
+        dataSource={{ sentAt: '2025-06-24T21:45:50.642678+08:00' }}
+        columns={[
+          {
+            title: 'Sent at',
+            dataIndex: 'sentAt',
+            valueType: 'dateTime',
+            ellipsis: true,
+          },
+        ]}
+      />,
+    );
+
+    const content = wrapper.container.querySelector(
+      '.ant-descriptions-item-content',
+    );
+    await waitFor(() => {
+      expect(content).toHaveTextContent(/2025-06-\d{2} \d{2}:45:50/);
+      expect(content).not.toHaveTextContent('Invalid Date');
+    });
+  });
+
+  it('🐛 styles 属性应透传给 Descriptions 且保留内置默认 minWidth', async () => {
+    const html = render(
+      <ProDescriptions
+        title="标题"
+        dataSource={{ id: 'text' }}
+        columns={[{ title: '文本', dataIndex: 'id' }]}
+        styles={{
+          title: { color: '#ff4d4f' },
+          content: { color: '#1677ff' },
+        }}
+      />,
+    );
+
+    const titleEl = html.container.querySelector<HTMLElement>(
+      '.ant-descriptions-title',
+    );
+    const contentEl = html.container.querySelector<HTMLElement>(
+      '.ant-descriptions-item-content',
+    );
+
+    expect(titleEl).toBeTruthy();
+    // happy-dom 不做颜色标准化，保留原始十六进制值
+    expect(titleEl?.style.color).toBe('#ff4d4f');
+    expect(contentEl?.style.color).toBe('#1677ff');
+    // 内置的 content minWidth: 0 默认值不应被用户的 styles 覆盖丢失
+    expect(contentEl?.style.minWidth).toBe('0');
+  });
+
+  it('🐛 copyable 复制 renderText 返回 JSX 时应使用原始值而非 [object Object]', async () => {
+    const RAW_VALUE = '13800138000';
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = navigator.clipboard;
+
+    try {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: writeTextMock },
+        writable: true,
+        configurable: true,
+      });
+
+      const wrapper = render(
+        <ProDescriptions
+          dataSource={{
+            phone: RAW_VALUE,
+            phoneVerified: true,
+          }}
+          columns={[
+            {
+              title: '手机号',
+              dataIndex: 'phone',
+              copyable: true,
+              renderText: (text, row) =>
+                text ? (
+                  <span>
+                    {row.phoneVerified ? (
+                      <Badge status="success" />
+                    ) : (
+                      <Badge status="error" />
+                    )}
+                    &nbsp;
+                    {text}
+                  </span>
+                ) : (
+                  text
+                ),
+            },
+          ]}
+        />,
+      );
+
+      const copyBtn = await waitFor(() =>
+        within(wrapper.baseElement).getByRole('button', { name: '复制' }),
+      );
+
+      fireEvent.click(copyBtn);
+
+      await waitFor(() => {
+        expect(writeTextMock).toHaveBeenCalledWith(RAW_VALUE);
+        expect(writeTextMock).not.toHaveBeenCalledWith('[object Object]');
+      });
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: originalClipboard,
+        writable: true,
+        configurable: true,
+      });
+    }
   });
 });

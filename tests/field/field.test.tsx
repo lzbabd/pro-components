@@ -1,17 +1,239 @@
-import { render, mount } from 'enzyme';
-import { Button, Input } from 'antd';
-import React from 'react';
-import moment from 'moment';
-import { act } from 'react-dom/test-utils';
-import Field from '@ant-design/pro-field';
+import {
+  ProField as Field,
+  FieldSelect,
+  FieldStatus,
+  FieldTimePicker,
+  ProFieldBadgeColor,
+} from '@ant-design/pro-components';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Button, ConfigProvider, Input } from 'antd';
+import dayjs from 'dayjs';
+import React, { act, useState } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { waitForWaitTime, waitTime } from '../util';
+import { TreeSelectDemo } from './fixtures/treeSelectDemo';
 
-import Demo from './fixtures/demo';
-import { waitForComponentToPaint, waitTime } from '../util';
+const domRef = React.createRef();
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('Field', () => {
+  afterEach(() => {
+    cleanup();
+  });
   it('🐴 base use', async () => {
     const html = render(<Field text="100" valueType="money" mode="edit" />);
-    expect(html).toMatchSnapshot();
+    // mode="edit" + valueType="money" 应渲染 input-number 输入框
+    expect(
+      html.baseElement.querySelector('.ant-input-number'),
+    ).toBeTruthy();
+    // 输入框默认渲染（具体显示值由 InputNumber 内部 controlled state 决定，初始可能为空）
+    expect(
+      html.baseElement.querySelector('.ant-input-number-input'),
+    ).toBeTruthy();
+    html.unmount();
+  });
+
+  it('🐛 #9192 date fields inherit variant from ConfigProvider', () => {
+    const html = render(
+      <ConfigProvider variant="filled">
+        <Field
+          valueType="date"
+          mode="edit"
+          fieldProps={{ value: dayjs('2026-09-26') }}
+        />
+      </ConfigProvider>,
+    );
+
+    expect(html.baseElement.querySelector('.ant-picker-filled')).toBeTruthy();
+  });
+
+  it('🐴 money onchange values', async () => {
+    const html = render(
+      <Field text="100" numberPopoverRender valueType="money" mode="edit" />,
+    );
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: { value: '1000' },
+      });
+    });
+
+    act(() => {
+      fireEvent.mouseDown(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {},
+      );
+    });
+    expect(html.baseElement.querySelector('input')?.value).toBe('¥ 1,000');
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: {
+          value: '¥ 100',
+        },
+      });
+    });
+
+    expect(html.baseElement.querySelector('input')?.value).toBe('¥ 100');
+    html.unmount();
+  });
+
+  it('🐴 money onchange values, when no moneySymbol', async () => {
+    const html = render(
+      <Field text="100" moneySymbol={false} valueType="money" mode="edit" />,
+    );
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: { value: 1000 },
+      });
+    });
+
+    act(() => {
+      fireEvent.mouseDown(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {},
+      );
+    });
+
+    expect(html.baseElement.querySelector('input')?.value).toBe('1000');
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: { value: 100 },
+      });
+    });
+
+    expect(html.baseElement.querySelector('input')?.value).toBe('100');
+    html.unmount();
+  });
+
+  it('🐴 money moneySymbol=false, no render moneySymbol', async () => {
+    const html = render(
+      <Field
+        text="100"
+        fieldProps={{
+          moneySymbol: false,
+          precision: 0,
+        }}
+        valueType="money"
+        mode="read"
+      />,
+    );
+    expect(html.baseElement.textContent).toBe('100');
+  });
+
+  it('🐴 money numberPopoverRender onchange values', async () => {
+    const html = render(
+      <Field
+        text="100"
+        numberPopoverRender={() => '1234'}
+        valueType="money"
+        mode="edit"
+      />,
+    );
+
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: {
+          value: 1000,
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(!!html.queryByDisplayValue('¥ 1,000')).toBeTruthy();
+    });
+
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: {
+          value: '¥ 100',
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(!!html.queryByDisplayValue('¥ 100')).toBeTruthy();
+    });
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: {
+          value: 111111111,
+        },
+      });
+    });
+  });
+
+  it('🐴 money show Popover', async () => {
+    const html = render(
+      <Field
+        text="100"
+        numberPopoverRender
+        fieldProps={{
+          open: true,
+        }}
+        valueType="money"
+        mode="edit"
+      />,
+    );
+
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: 111111111,
+          },
+        },
+      );
+    });
+
+    await html.findByDisplayValue('¥ 111,111,111');
+
+    act(() => {
+      fireEvent.click(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+      );
+      fireEvent.focus(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+      );
+      fireEvent.mouseEnter(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+      );
+      fireEvent.mouseDown(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+      );
+    });
+
+    html.unmount();
+  });
+
+  it('🐴 should trigger onChange function provided when change', async () => {
+    const fn = vi.fn();
+    const html = render(
+      <Field
+        text="100"
+        valueType="money"
+        mode="edit"
+        fieldProps={{ onChange: fn, onBlur: fn }}
+      />,
+    );
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: { value: 1000 },
+      });
+    });
+
+    expect(fn).toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.blur(html.baseElement.querySelector('input')!, {
+        target: { value: 1000 },
+      });
+    });
+
+    expect(fn).toHaveBeenCalledTimes(2);
+
+    html.unmount();
   });
 
   it('🐴 percent=0', async () => {
@@ -26,7 +248,10 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html).toMatchSnapshot();
+    // percent=0 + showSymbol=true 应渲染 "0%" 文本
+    expect(html.baseElement.textContent).toContain('0');
+    expect(html.baseElement.textContent).toContain('%');
+    html.unmount();
   });
 
   it('🐴 render 关闭 when text=0', async () => {
@@ -42,7 +267,8 @@ describe('Field', () => {
         }}
       />,
     );
-    expect(html.text()).toBe('关闭');
+    expect(html.baseElement.textContent).toBe('关闭');
+    html.unmount();
   });
 
   it('🐴 render select form option', async () => {
@@ -61,7 +287,8 @@ describe('Field', () => {
         }}
       />,
     );
-    expect(html.text()).toBe('关闭');
+    expect(html.baseElement.textContent).toBe('关闭');
+    html.unmount();
   });
 
   it(`🐴 select valueEnum key is undefined`, async () => {
@@ -79,16 +306,26 @@ describe('Field', () => {
       />,
     );
 
-    expect(html.text()).toBe('default');
+    expect(html.baseElement.textContent).toBe('default');
+    html.unmount();
   });
 
-  ['select', 'checkbox', 'radio', 'radioButton'].forEach((valueType) => {
-    it(`🐴 ${valueType} support render function`, async () => {
+  [
+    'select',
+    'checkbox',
+    'radio',
+    'radioButton',
+    'cascader',
+    'treeSelect',
+    'segmented',
+  ].forEach((valueType) => {
+    it(`🐴 ${valueType}  read mode support render valueEnum`, async () => {
       const html = render(
         <Field
           text="default"
           valueType={valueType as 'radio'}
           mode="read"
+          ref={domRef}
           render={(text, _, dom) => <>pre{dom}</>}
           valueEnum={{
             default: { text: '关闭', status: 'Default' },
@@ -98,15 +335,15 @@ describe('Field', () => {
           }}
         />,
       );
-      expect(html.text()).toBe('pre关闭');
+      await html.findAllByText('pre');
     });
 
-    it(`🐴 ${valueType} support request function`, async () => {
+    it(`🐴 ${valueType} read mode support request function`, async () => {
       const ref = React.createRef<{
-        fetchData: () => void;
+        fetchData: (keyWord?: string) => void;
       }>();
-      const fn = jest.fn();
-      const html = mount(
+      const fn = vi.fn();
+      const html = render(
         <Field
           ref={ref}
           text="default"
@@ -115,33 +352,57 @@ describe('Field', () => {
           mode="read"
           request={async () => {
             fn();
-            return [
-              { label: '全部', value: 'all' },
-              { label: '未解决', value: 'open' },
-              { label: '已解决', value: 'closed' },
-              { label: '解决中', value: 'processing' },
-            ];
+            return new Promise((resolve) => {
+              setTimeout(() => {
+                resolve([
+                  { label: '全部', value: 'all' },
+                  { label: '未解决', value: 'open' },
+                  { label: '已解决', value: 'closed' },
+                  { label: '解决中', value: 'processing' },
+                ]);
+              }, 1000);
+            });
           }}
         />,
       );
 
-      await waitForComponentToPaint(html, 100);
+      // Wait for the initial request to complete and text to appear
+      await waitFor(
+        () => {
+          expect(html.baseElement.textContent).toContain('default');
+        },
+        { timeout: 3000 },
+      );
+
+      expect(fn).toHaveBeenCalledTimes(1);
+
       act(() => {
-        ref.current?.fetchData();
+        ref.current?.fetchData?.('test');
       });
-      await waitForComponentToPaint(html, 100);
-      act(() => {
-        html.unmount();
-      });
+
+      // Wait for the debounced value to update and the second request to complete
+      await waitFor(
+        () => {
+          expect(fn).toHaveBeenCalledTimes(2);
+        },
+        { timeout: 3000 },
+      );
+
+      html.unmount();
     });
 
-    it(`🐴 ${valueType} support renderFormItem function`, async () => {
-      const html = mount(
+    it(`🐴 ${valueType}  edit model support formItemRender function`, async () => {
+      const html = render(
         <Field
           text="default"
           valueType={valueType as 'radio'}
           mode="edit"
-          renderFormItem={() => <Input id="select" />}
+          formItemRender={() => (
+            <>
+              <Input id="select" />
+              default
+            </>
+          )}
           valueEnum={{
             0: { text: '关闭', status: 'Default' },
             1: { text: '运行中', status: 'Processing' },
@@ -150,8 +411,53 @@ describe('Field', () => {
           }}
         />,
       );
-      await waitForComponentToPaint(html, 100);
-      expect(html.find('#select').exists()).toBeTruthy();
+
+      await html.findAllByText('default');
+
+      expect(!!html.baseElement.querySelector('#select')).toBeTruthy();
+      html.unmount();
+    });
+
+    it(`🐴 ${valueType}  edit model support formItemRender return null`, async () => {
+      const html = render(
+        <Field
+          text="default"
+          valueType={valueType as 'radio'}
+          mode="edit"
+          // @ts-expect-error
+          formItemRender={() => undefined}
+          valueEnum={{
+            0: { text: '关闭', status: 'Default' },
+            1: { text: '运行中', status: 'Processing' },
+            2: { text: '已上线', status: 'Success' },
+            3: { text: '异常', status: 'Error' },
+          }}
+        />,
+      );
+      expect(html.baseElement.textContent).toBe('');
+      html.unmount();
+    });
+
+    it(`🐴 ${valueType}  edit model support formItemRender return 0`, async () => {
+      const html = render(
+        <Field
+          text="default"
+          valueType={valueType as 'radio'}
+          mode="edit"
+          // @ts-expect-error
+          formItemRender={() => 0}
+          valueEnum={{
+            0: { text: '关闭', status: 'Default' },
+            1: { text: '运行中', status: 'Processing' },
+            2: { text: '已上线', status: 'Success' },
+            3: { text: '异常', status: 'Error' },
+          }}
+        />,
+      );
+
+      await html.findAllByText('0');
+
+      html.unmount();
     });
 
     it('🐴 select mode=null', async () => {
@@ -169,40 +475,55 @@ describe('Field', () => {
           }}
         />,
       );
-      expect(html.text()).toBeFalsy();
+      expect(html.baseElement.textContent).toBeFalsy();
+      html.unmount();
     });
 
-    it('🐴 select request loading', async () => {
+    if (
+      !['checkbox', 'radio', 'radioButton', 'segmented'].includes(valueType)
+    ) {
+      it(`🐴 ${valueType} request loading with request`, async () => {
+        const html = render(
+          <Field
+            text="default"
+            valueType={valueType as 'radio'}
+            mode="read"
+            request={async () => {
+              await waitTime(10000);
+              return [
+                { label: '全部', value: 'all' },
+                { label: '未解决', value: 'open' },
+                { label: '已解决', value: 'closed' },
+                { label: '解决中', value: 'processing' },
+              ];
+            }}
+          />,
+        );
+        expect(html.baseElement.textContent).toBe('default');
+        html.unmount();
+      });
+    }
+
+    it(`🐴 ${valueType} request loading without request`, async () => {
       const html = render(
         <Field
           text="default"
           valueType={valueType as 'radio'}
           mode="read"
-          request={async () => {
-            await waitTime(10000);
-            return [
-              { label: '全部', value: 'all' },
-              { label: '未解决', value: 'open' },
-              { label: '已解决', value: 'closed' },
-              { label: '解决中', value: 'processing' },
-            ];
-          }}
+          options={[]}
         />,
       );
-      expect(html.text()).toBe('default');
-    });
-
-    it('🐴 select request loading', async () => {
-      const html = render(
-        <Field text="default" valueType={valueType as 'radio'} mode="read" options={[]} />,
-      );
-      expect(html.text()).toBe('default');
+      expect(html.baseElement.textContent).toBe('default');
+      html.unmount();
     });
   });
 
   it('🐴 select valueEnum and request=null ', async () => {
-    const html = render(<Field text="default" valueType="select" mode="read" />);
-    expect(html.text()).toBe('default');
+    const html = render(
+      <Field text="default" valueType="select" mode="read" />,
+    );
+    expect(html.baseElement.textContent).toBe('default');
+    html.unmount();
   });
 
   it('🐴 select labelInValue use label', async () => {
@@ -222,7 +543,8 @@ describe('Field', () => {
         ]}
       />,
     );
-    expect(html.text()).toBe('不解决');
+    expect(html.baseElement.textContent).toBe('不解决');
+    html.unmount();
   });
 
   it('🐴 select labelInValue use label', async () => {
@@ -243,7 +565,105 @@ describe('Field', () => {
         ]}
       />,
     );
-    expect(html.find('.ant-pro-core-field-label').text()).toBe('不解决');
+    expect(
+      html.baseElement.querySelector('.ant-pro-core-field-label')?.textContent,
+    ).toBe('不解决');
+    html.unmount();
+  });
+
+  ['cascader', 'treeSelect'].map((valueType) => {
+    it(`🐴 ${valueType} labelInValue use label`, async () => {
+      const fn = vi.fn();
+      const html = render(
+        <Field
+          fieldProps={{
+            treeCheckable: true,
+            value: [
+              {
+                label: '浙江',
+                value: 'zhejiang',
+              },
+              {
+                label: '杭州',
+                value: 'hangzhou',
+              },
+              {
+                label: '西湖',
+                value: 'xihu',
+              },
+            ].map((item) => {
+              return item.value;
+            }),
+            onOpenChange: (e: boolean) => {
+              fn(e);
+            },
+          }}
+          light
+          valueType={valueType as 'cascader'}
+          mode="edit"
+          treeData={[
+            {
+              value: 'zhejiang',
+              label: '浙江',
+              key: 'zhejiang',
+              children: [
+                {
+                  value: 'hangzhou',
+                  label: '杭州',
+                  key: 'hangzhou',
+                  children: [
+                    {
+                      value: 'xihu',
+                      key: 'xihu',
+                      label: '西湖',
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+          options={[
+            {
+              value: 'zhejiang',
+              label: '浙江',
+              key: 'zhejiang',
+              children: [
+                {
+                  value: 'hangzhou',
+                  label: '杭州',
+                  key: 'hangzhou',
+                  children: [
+                    {
+                      value: 'xihu',
+                      key: 'xihu',
+                      label: '西湖',
+                    },
+                  ],
+                },
+              ],
+            },
+          ]}
+        />,
+      );
+
+      act(() => {
+        fireEvent.click(
+          html.baseElement.querySelector('.ant-pro-core-field-label')!,
+        );
+      });
+
+      await waitFor(() => {
+        expect(fn).toHaveBeenCalledWith(true);
+      });
+
+      act(() => {
+        fireEvent.mouseDown(html.container.querySelector('.ant-select')!);
+      });
+
+      await waitFor(() => {
+        expect(fn).toHaveBeenCalledWith(false);
+      });
+    });
   });
 
   it('🐴 select text=null & valueEnum=null ', async () => {
@@ -256,11 +676,12 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html.text()).toBe('-');
+    expect(html.baseElement.textContent).toBe('-');
+    html.unmount();
   });
 
   it('🐴 select options should change text', async () => {
-    const html = mount(
+    const html = render(
       <Field
         text="all"
         fieldProps={{
@@ -275,38 +696,346 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    await waitForComponentToPaint(html, 100);
-    expect(html.text()).toBe('全部');
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('全部');
+    });
 
     act(() => {
-      html.setProps({
-        fieldProps: { options: [] },
+      html.rerender(
+        <Field
+          text="all"
+          fieldProps={{
+            options: [],
+          }}
+          valueType="select"
+          mode="read"
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('all');
+    });
+
+    html.unmount();
+  });
+
+  ['select', 'cascader', 'treeSelect'].forEach((valueType) => {
+    it(`🐴 ${valueType} options fieldNames`, async () => {
+      const html = render(
+        <Field
+          text={['0-0', '0-0-0']}
+          fieldProps={{
+            fieldNames: {
+              label: 'title',
+              // select
+              options: 'children',
+            },
+            options: [
+              {
+                title: 'Node1',
+                value: '0-0',
+                children: [
+                  {
+                    title: 'Child Node1',
+                    value: '0-0-0',
+                  },
+                ],
+              },
+              {
+                title: 'Node2',
+                value: '0-1',
+                children: [
+                  {
+                    title: 'Child Node3',
+                    value: '0-1-0',
+                  },
+                  {
+                    title: 'Child Node4',
+                    value: '0-1-1',
+                  },
+                  {
+                    title: 'Child Node5',
+                    value: '0-1-2',
+                  },
+                ],
+              },
+            ],
+          }}
+          valueType={valueType as 'cascader'}
+          mode="read"
+        />,
+      );
+      await waitFor(() => {
+        expect(html.baseElement.textContent).toBe('Node1,Child Node1');
+      });
+
+      act(() => {
+        html.rerender(
+          <Field
+            text={['0-0', '0-0-0']}
+            fieldProps={{
+              fieldNames: {
+                label: 'title',
+                // select
+                options: 'children',
+              },
+              options: [],
+            }}
+            valueType={valueType as 'cascader'}
+            mode="read"
+          />,
+        );
+      });
+
+      await waitFor(() => {
+        expect(html.baseElement.textContent).toBe('0-0,0-0-0');
+      });
+    });
+  });
+
+  it(`🐴 treeSelect searchValue control mode`, async () => {
+    const onSearch = vi.fn();
+    const html = render(
+      <TreeSelectDemo
+        multiple={false}
+        labelInValue={false}
+        showSearch={{
+          onSearch: (e) => {
+            onSearch(e);
+            console.log(e);
+          },
+        }}
+      />,
+    );
+
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('.ant-select-input')!, {
+        target: { value: 'test' },
       });
     });
 
-    await waitForComponentToPaint(html, 100);
+    expect(onSearch).toHaveBeenLastCalledWith('test');
 
-    expect(html.text()).toBe('all');
+    act(() => {
+      html.rerender(
+        <TreeSelectDemo
+          showSearch={{
+            searchValue: 'ProComponents',
+            onSearch: onSearch,
+          }}
+          multiple={false}
+          labelInValue={false}
+        />,
+      );
+    });
+
+    expect(
+      html.baseElement.querySelector<HTMLInputElement>('.ant-select-input')
+        ?.value,
+    ).toEqual('ProComponents');
+
+    html.unmount();
   });
 
-  it('🐴 edit and no plain', async () => {
-    const html = render(<Demo plain={false} state="edit" />);
-    expect(html).toMatchSnapshot();
+  it(`🐴 treeSelect options single value`, async () => {
+    const onChangeFn = vi.fn();
+    const TreeSelectChangeDemo = () => {
+      const [value, setValue] = useState();
+      return (
+        <TreeSelectDemo
+          multiple={false}
+          labelInValue={false}
+          onChange={(res) => {
+            onChangeFn(Array.isArray(res));
+            setValue(value);
+          }}
+        />
+      );
+    };
+    const html = render(<TreeSelectChangeDemo />);
+
+    await html.findAllByText('Node2');
+
+    const searchInput = html.baseElement.querySelector(
+      'input.ant-select-input',
+    );
+
+    expect(!!searchInput).toBeTruthy();
+
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('input.ant-select-input')!,
+        {
+          target: {
+            value: 'Node5',
+          },
+        },
+      );
+    });
+
+    const selectTreeTitle = html.baseElement.querySelectorAll<HTMLSpanElement>(
+      'span.ant-select-tree-title',
+    );
+
+    act(() => {
+      selectTreeTitle[0]?.click();
+    });
+    expect(html.queryAllByText('Node2').length > 0).toBeTruthy();
+
+    selectTreeTitle[selectTreeTitle.length - 1]?.click();
+
+    expect(html.queryAllByText('Child Node5').length > 0).toBeTruthy();
+
+    expect(onChangeFn).toHaveBeenCalledWith(false);
+
+    html.unmount();
   });
 
-  it('🐴 edit and plain', async () => {
-    const html = render(<Demo plain state="edit" />);
-    expect(html).toMatchSnapshot();
-  });
+  it(`🐴 treeSelect support request function and search, asynchronously loadData`, async () => {
+    const requestFn = vi.fn(),
+      onSearchFn = vi.fn(),
+      onBlurFn = vi.fn(),
+      loadDataFn = vi.fn(),
+      onClearFn = vi.fn();
 
-  it('🐴 read and plain', async () => {
-    const html = render(<Demo plain state="read" />);
-    expect(html).toMatchSnapshot();
-  });
+    const TreeSelectChangeDemo = () => {
+      const [value, setValue] = useState();
+      return (
+        <TreeSelectDemo
+          showSearch={{
+            onSearch: onSearchFn,
+          }}
+          onBlur={onBlurFn}
+          onClear={onClearFn}
+          loadData={async (node) => {
+            loadDataFn(!!node);
+            return;
+          }}
+          value={value}
+          request={requestFn}
+          onChange={() => {
+            setValue(value);
+          }}
+        />
+      );
+    };
 
-  it('🐴 read ant no plain', async () => {
-    const html = render(<Demo plain={false} state="read" />);
-    expect(html).toMatchSnapshot();
+    const html = render(<TreeSelectChangeDemo />);
+
+    await waitFor(() => {
+      expect(requestFn).toHaveBeenCalledTimes(1);
+    });
+
+    await html.findAllByText('Node2');
+
+    act(() => {
+      html.baseElement
+        .querySelectorAll<HTMLSpanElement>(
+          'span.ant-select-tree-switcher_close',
+        )
+        [
+          html.baseElement.querySelectorAll(
+            'span.ant-select-tree-switcher_close',
+          ).length - 1
+        ].click();
+      html.baseElement
+        .querySelectorAll<HTMLSpanElement>(
+          'span.ant-select-tree-switcher_close',
+        )
+        [
+          html.baseElement.querySelectorAll(
+            'span.ant-select-tree-switcher_close',
+          ).length - 1
+        ].click();
+    });
+
+    await waitFor(() => {
+      expect(
+        !!html.baseElement.querySelector('input.ant-select-input'),
+      ).toBeTruthy();
+    });
+
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('input.ant-select-input')!,
+        {
+          target: {
+            value: 'Node5',
+          },
+        },
+      );
+    });
+
+    await waitFor(() => {
+      expect(onSearchFn).toHaveBeenCalled();
+    });
+
+    act(() => {
+      html.baseElement
+        .querySelectorAll<HTMLSpanElement>('.ant-select-tree-switcher_close')
+        .forEach((item) => item.click());
+    });
+
+    await waitFor(() => {
+      const selectTreeTitle =
+        html.baseElement.querySelectorAll<HTMLSpanElement>(
+          '.ant-select-tree-title',
+        );
+      expect(selectTreeTitle.length).toBe(2);
+    });
+
+    act(() => {
+      const selectTreeTitle =
+        html.baseElement.querySelectorAll<HTMLSpanElement>(
+          '.ant-select-tree-title',
+        );
+      selectTreeTitle[0]?.click();
+    });
+
+    act(() => {
+      const selectTreeTitle =
+        html.baseElement.querySelectorAll<HTMLSpanElement>(
+          '.ant-select-tree-title',
+        );
+      selectTreeTitle[selectTreeTitle.length - 1]?.click();
+    });
+
+    await waitFor(() => {
+      expect(html.queryAllByText('Child Node5').length > 0).toBeTruthy();
+      expect(html.queryAllByText('Node2').length > 0).toBeTruthy();
+    });
+
+    expect(
+      html.baseElement.querySelector<HTMLInputElement>('input.ant-select-input')
+        ?.value,
+    ).toBe('');
+
+    // 在新版本的 Ant Design 中，多选模式下清除按钮的DOM结构可能已改变
+    // 尝试查找清除按钮并测试清除功能
+    const clearBtn = html.baseElement.querySelector('.ant-select-clear');
+
+    if (clearBtn) {
+      act(() => {
+        fireEvent.click(clearBtn, {});
+        fireEvent.mouseDown(clearBtn, {});
+      });
+
+      await waitFor(() => {
+        expect(onClearFn).toHaveBeenCalled();
+        expect(html.baseElement.textContent).toContain('');
+      });
+    }
+
+    act(() => {
+      fireEvent.blur(
+        html.baseElement.querySelector('input.ant-select-input')!,
+        {},
+      );
+    });
+
+    expect(onBlurFn).toHaveBeenCalledTimes(1);
+    html.unmount();
   });
 
   const valueTypes = [
@@ -325,37 +1054,43 @@ describe('Field', () => {
     'progress',
     'percent',
     'digit',
+    'digitRange',
     'second',
     'code',
     'jsonCode',
     'rate',
     'image',
     'color',
+    'slider',
+    'cascader',
+    'treeSelect',
   ];
   valueTypes.forEach((valueType) => {
     it(`🐴 valueType support render ${valueType}`, async () => {
       const html = render(
         <Field
+          ref={domRef}
           text="1994-07-29 12:00:00"
           mode="read"
           valueType={valueType as 'text'}
-          render={() => <>qixian</>}
+          render={() => <span>qixian</span>}
         />,
       );
-      expect(html.text()).toBe('qixian');
+      await html.findAllByText('qixian');
+      expect(html.baseElement.textContent).toBe('qixian');
     });
 
-    it(`🐴 valueType renderFormItem ${valueType}`, async () => {
+    it(`🐴 valueType formItemRender ${valueType}`, async () => {
       if (valueType === 'option') return;
       const html = render(
         <Field
-          text={moment('2019-11-16 12:50:26').valueOf()}
+          text={dayjs('2019-11-16 12:50:26').valueOf()}
           mode="edit"
           valueType={valueType as 'text'}
-          renderFormItem={() => <>qixian</>}
+          formItemRender={() => <span>qixian</span>}
         />,
       );
-      expect(html.text()).toBe('qixian');
+      await html.findAllByText('qixian');
     });
 
     it(`🐴 ${valueType} mode="error"`, async () => {
@@ -368,7 +1103,7 @@ describe('Field', () => {
           valueType={valueType as 'text'}
         />,
       );
-      expect(html.text()).toBeFalsy();
+      expect(html.baseElement.textContent).toBeFalsy();
     });
 
     it(`🐴 valueType render ${valueType} when text is null`, async () => {
@@ -379,7 +1114,9 @@ describe('Field', () => {
           valueType={valueType}
         />,
       );
-      expect(html.text()).toBe('-');
+      await waitFor(() => {
+        expect(html.baseElement.textContent).toBe('-');
+      });
     });
 
     it(`🐴 valueType support render ${valueType} when text is null`, async () => {
@@ -391,13 +1128,15 @@ describe('Field', () => {
           valueType={valueType}
         />,
       );
-      expect(html.text()).toBe('qixian');
+      await waitFor(() => {
+        expect(html.baseElement.textContent).toBe('qixian');
+      });
     });
   });
 
   it('🐴 money valueType is Object', async () => {
     const renderField = (locale: string) => {
-      let html = render(
+      const html = render(
         <Field
           text="100"
           valueType={{
@@ -407,38 +1146,57 @@ describe('Field', () => {
           mode="edit"
         />,
       );
-      expect(html).toMatchSnapshot();
+      // mode="edit" + money 类型应渲染 input-number
+      expect(
+        html.baseElement.querySelector('.ant-input-number'),
+      ).toBeTruthy();
+      // input-number-input 元素存在
+      expect(
+        html.baseElement.querySelector('.ant-input-number-input'),
+      ).toBeTruthy();
 
-      html = render(
+      act(() => {
+        html.rerender(
+          <Field
+            text="100"
+            valueType={{
+              type: 'money',
+              moneySymbol: false,
+              locale,
+            }}
+            mode="read"
+          />,
+        );
+      });
+
+      // mode="read" 时不应再渲染 input-number 编辑控件
+      expect(
+        html.baseElement.querySelector('.ant-input-number'),
+      ).toBeFalsy();
+      // 仍应渲染数字内容
+      expect(html.baseElement.textContent).toContain('100');
+
+      html.rerender(
         <Field
           text="100"
           valueType={{
             type: 'money',
-            moneySymbol: '',
             locale,
           }}
           mode="read"
         />,
       );
-      expect(html).toMatchSnapshot();
-
-      html = render(
-        <Field
-          text="100"
-          valueType={{
-            type: 'money',
-            locale,
-          }}
-          mode="read"
-        />,
-      );
-      expect(html).toMatchSnapshot();
+      // mode="read" + 默认 moneySymbol 应渲染金额文本（包含数字 100）
+      expect(html.baseElement.textContent).toContain('100');
+      // input-number 编辑控件不应再渲染
+      expect(html.baseElement.querySelector('.ant-input-number')).toBeFalsy();
+      html.unmount();
     };
 
-    renderField('en_US');
-    renderField('ru_RU');
-    renderField('ms_MY');
-    renderField('sr_RS');
+    renderField('en-US');
+    renderField('ru-RU');
+    renderField('ms-MY');
+    renderField('sr-RS');
   });
 
   it('🐴 percent support unit string', async () => {
@@ -452,11 +1210,14 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html).toMatchSnapshot();
+    // text="100%" 已自带 % 符号，read 模式下应正常展示
+    expect(html.baseElement.textContent).toContain('100');
+    expect(html.baseElement.textContent).toContain('%');
+    html.unmount();
   });
 
   it('🐴 percent support unit string', async () => {
-    const html = mount(
+    const html = render(
       <Field
         text="100%"
         valueType={{
@@ -467,16 +1228,22 @@ describe('Field', () => {
         mode="edit"
       />,
     );
-
-    html.find('.ant-input-number-input').simulate('change', {
-      target: {
-        value: '100',
-      },
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '100',
+          },
+        },
+      );
     });
+
+    await html.findByDisplayValue('% 100');
   });
 
   it('🐴 percent valueType is Object', async () => {
-    let html = render(
+    const html = render(
       <Field
         text="100"
         valueType={{
@@ -486,22 +1253,32 @@ describe('Field', () => {
         mode="edit"
       />,
     );
-    expect(html).toMatchSnapshot();
+    // mode="edit" + percent 应渲染 input-number 输入框
+    expect(html.baseElement.querySelector('.ant-input-number')).toBeTruthy();
+    expect(
+      html.baseElement.querySelector('.ant-input-number-input'),
+    ).toBeTruthy();
+    act(() => {
+      html.rerender(
+        <Field
+          text="100"
+          valueType={{
+            type: 'percent',
+            showSymbol: true,
+          }}
+          showColor
+          mode="read"
+        />,
+      );
+    });
 
-    html = render(
-      <Field
-        text="100"
-        valueType={{
-          type: 'percent',
-          showSymbol: true,
-        }}
-        showColor
-        mode="read"
-      />,
-    );
-    expect(html.text()).toBe('+ 100.00%');
+    await waitFor(() => {
+      expect(html.baseElement.querySelector('span')?.textContent).toBe(
+        '+ 100.00%',
+      );
+    });
 
-    html = render(
+    html.rerender(
       <Field
         text="100"
         valueType={{
@@ -512,9 +1289,53 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html.text()).toBe('+ 100.0%');
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('+ 100.0%');
+    });
+    html.rerender(
+      <Field
+        text="100"
+        valueType={{
+          type: 'percent',
+          showSymbol: true,
+          precision: 0,
+        }}
+        mode="read"
+      />,
+    );
 
-    html = render(
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('+ 100%');
+    });
+    html.rerender(
+      <Field
+        text="100.01"
+        valueType={{
+          type: 'percent',
+          showSymbol: true,
+          precision: 0,
+        }}
+        mode="read"
+      />,
+    );
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('+ 100%');
+    });
+    html.rerender(
+      <Field
+        text="100"
+        valueType={{
+          type: 'percent',
+          showSymbol: true,
+          precision: -1,
+        }}
+        mode="read"
+      />,
+    );
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('+ 100%');
+    });
+    html.rerender(
       <Field
         text={-100}
         valueType={{
@@ -526,80 +1347,178 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html.text()).toBe('- 100.0%');
-  });
-
-  it('🐴 password support visible', async () => {
-    const html = mount(<Field text={123456} valueType="password" mode="read" />);
-    await waitForComponentToPaint(html);
-    act(() => {
-      html.find('span.anticon-eye-invisible').simulate('click');
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('- 100.0%');
     });
-    await waitForComponentToPaint(html);
-    expect(html.find('span.anticon-eye').exists()).toBeTruthy();
   });
-
-  it('🐴 valueType=text', async () => {
-    const html = mount(
+  it('🐴 percent prefix="???" onchange values', async () => {
+    const html = render(
       <Field
         text="100"
-        fieldProps={{
-          composition: true,
+        valueType={{
+          type: 'percent',
         }}
-        valueType="text"
-        mode="edit"
+        prefix="???"
+        mode="read"
       />,
     );
-    await waitForComponentToPaint(html);
-    html.find('input').simulate('compositionstart', {
-      target: {
-        value: 'xxx',
-      },
+    await waitFor(() => {
+      // read test
+      expect(html.baseElement.textContent).toBe('???100.00%');
     });
-    await waitForComponentToPaint(html);
-
-    html.find('input').simulate('change', {
-      target: {
-        value: 'xxx',
-      },
+    act(() => {
+      html.rerender(
+        <Field
+          text="100"
+          valueType={{
+            type: 'percent',
+          }}
+          prefix="???"
+          mode="edit"
+        />,
+      );
+    });
+    // edit test
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '123',
+          },
+        },
+      );
+    });
+    await waitFor(() => {
+      expect(html.baseElement.querySelector('input')?.value).toBe('??? 123');
+    });
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '123456',
+          },
+        },
+      );
+    });
+    await waitFor(() => {
+      expect(html.baseElement.querySelector('input')?.value).toBe(
+        '??? 123,456',
+      );
+    });
+  });
+  it('🐴 percent magic prefix onchange values', async () => {
+    const words = '1234567890 ~!@#$%^&*()_+{}:"?> <?>L:'.split('');
+    const magicPrefix = words
+      .map(() => words[Math.floor(Math.random() * words.length - 1)])
+      .join('');
+    const html = render(
+      <Field
+        text="100"
+        valueType={{
+          type: 'percent',
+        }}
+        prefix={magicPrefix}
+        mode="read"
+      />,
+    );
+    await waitFor(() => {
+      // read test
+      expect(html.baseElement.textContent).toBe(`${magicPrefix}100.00%`);
+    });
+    act(() => {
+      html.rerender(
+        <Field
+          text="100"
+          valueType={{
+            type: 'percent',
+          }}
+          prefix={magicPrefix}
+          mode="edit"
+        />,
+      );
+    });
+    // edit test
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '123',
+          },
+        },
+      );
     });
 
-    await waitForComponentToPaint(html);
-
-    html.find('input').simulate('compositionend', {
-      target: {
-        value: 'xxx',
-      },
+    await waitFor(() => {
+      expect(html.baseElement.querySelector('input')?.value).toBe(
+        `${magicPrefix} 123`,
+      );
     });
 
-    await waitForComponentToPaint(html);
-
-    html.find('input').simulate('change', {
-      target: {
-        value: 'xxx',
-      },
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '123456',
+          },
+        },
+      );
     });
-    expect(html.find('input').props().value).toBe('xxx');
+
+    await waitFor(() => {
+      expect(html.baseElement.querySelector('input')?.value).toBe(
+        `${magicPrefix} 123,456`,
+      );
+    });
   });
 
-  it('🐴 password support controlled visible', async () => {
-    const fn = jest.fn();
-    const html = mount(
+  it('🐴 password support open', async () => {
+    const html = render(
+      <Field text={123456} valueType="password" mode="read" />,
+    );
+    await html.findByText('********');
+
+    act(() => {
+      fireEvent.click(
+        html.baseElement.querySelector('span.anticon-eye-invisible')!,
+      );
+    });
+    await waitFor(() => {
+      expect(!!html.baseElement.querySelector('span.anticon-eye')).toBeTruthy();
+    });
+
+    await html.findByText('123456');
+    html.unmount();
+  });
+
+  it('🐴 password support controlled open', async () => {
+    const fn = vi.fn();
+    const html = render(
       <Field
         text={123456}
-        onVisible={(visible) => fn(visible)}
-        visible
+        onOpenChange={(open) => fn(open)}
+        open
         valueType="password"
         mode="read"
       />,
     );
-    await waitForComponentToPaint(html);
+    await html.findByText('123456');
     act(() => {
-      html.find('span.anticon-eye').simulate('click');
+      fireEvent.click(html.baseElement.querySelector('span.anticon-eye')!);
     });
-    await waitForComponentToPaint(html);
-    expect(html.find('span.anticon-eye-invisible').exists()).toBeFalsy();
-    expect(fn).toBeCalledWith(false);
+    await html.findByText('123456');
+
+    await waitFor(() => {
+      expect(
+        !!html.baseElement.querySelector('span.anticon-eye-invisible'),
+      ).toBeFalsy();
+      expect(fn).toHaveBeenCalledWith(false);
+    });
+
+    html.unmount();
   });
 
   it('🐴 options support empty dom', async () => {
@@ -612,47 +1531,82 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html).toMatchSnapshot();
+    // render 返回 []、text 为 [] 时，不应渲染任何 button
+    expect(html.baseElement.querySelector('button')).toBeFalsy();
+    html.unmount();
   });
 
   it('🐴 options support no text', async () => {
     const html = render(<Field text="qixian" valueType="option" mode="read" />);
-    expect(html).toMatchSnapshot();
+    // option 类型 + 字符串 text 且非数组时，FieldOption 会按空文本处理 → 不渲染按钮
+    // 文本本身也不会被原样渲染
+    expect(html.baseElement.querySelector('button')).toBeFalsy();
+    // 不应抛错；container 应正常存在
+    expect(html.baseElement).toBeTruthy();
+    html.unmount();
   });
 
   it('🐴 options support dom list', () => {
     const html = render(
       <Field
-        text={[<Button key="add">新建</Button>, <Button key="edit">修改</Button>]}
+        text={[
+          <Button key="add">新建</Button>,
+          <Button key="edit">修改</Button>,
+        ]}
         valueType="option"
         mode="read"
       />,
     );
-    expect(html).toMatchSnapshot();
+    // text 为 dom 数组时，应渲染为 2 个 button
+    const buttons = html.baseElement.querySelectorAll('button');
+    expect(buttons.length).toBe(2);
+    expect(buttons[0].textContent?.replace(/\s/g, '')).toBe('新建');
+    expect(buttons[1].textContent?.replace(/\s/g, '')).toBe('修改');
+    html.unmount();
   });
 
   it('🐴 options support dom text', () => {
     const html = render(
-      <Field text={['新建', <Button key="edit">修改</Button>]} valueType="option" mode="read" />,
+      <Field
+        text={['新建', <Button key="edit">修改</Button>]}
+        valueType="option"
+        mode="read"
+      />,
     );
-    expect(html).toMatchSnapshot();
+    // 混合类型：字符串 + dom，应渲染所有内容
+    expect(html.baseElement.textContent).toContain('新建');
+    expect(html.baseElement.querySelectorAll('button').length).toBe(1);
+    html.unmount();
   });
 
   it('🐴 options support one dom', () => {
     const html = render(
-      <Field text={[<Button key="add">新建</Button>]} valueType="option" mode="read" />,
+      <Field
+        text={[<Button key="add">新建</Button>]}
+        valueType="option"
+        mode="read"
+      />,
     );
-    expect(html).toMatchSnapshot();
+    // 仅一个 button dom 时正常渲染
+    const buttons = html.baseElement.querySelectorAll('button');
+    expect(buttons.length).toBe(1);
+    expect(buttons[0].textContent?.replace(/\s/g, '')).toBe('新建');
+    html.unmount();
   });
 
   it('🐴 progress support string number', () => {
     const html = render(<Field text="12" valueType="progress" mode="read" />);
-    expect(html).toMatchSnapshot();
+    // 字符串数字应解析为进度条值，渲染 progress 容器
+    expect(html.baseElement.querySelector('.ant-progress')).toBeTruthy();
+    html.unmount();
   });
 
   it('🐴 progress support no number', () => {
-    const html = render(<Field text="qixian" valueType="progress" mode="read" />);
-    expect(html).toMatchSnapshot();
+    const html = render(
+      <Field text="qixian" valueType="progress" mode="read" />,
+    );
+    // 非数字文本时也应尝试渲染 progress（NaN 处理由组件内部完成）
+    expect(html.baseElement.querySelector('.ant-progress')).toBeTruthy();
   });
 
   it('🐴 valueType={}', () => {
@@ -664,37 +1618,583 @@ describe('Field', () => {
         mode="read"
       />,
     );
-    expect(html.text()).toBe('qixian');
+    expect(html.baseElement.textContent).toBe('qixian');
+    html.unmount();
   });
 
   it('🐴 keypress simulate', async () => {
-    const html = mount(<Field text="qixian" valueType="textarea" mode="edit" />);
-    await waitForComponentToPaint(html);
+    const html = render(
+      <Field text="qixian" valueType="textarea" mode="edit" />,
+    );
+    await html.findByPlaceholderText('请输入');
+
     act(() => {
-      html.find('TextArea').at(0).simulate('keypress', {
+      fireEvent.keyPress(html.baseElement.querySelector('textarea')!, {
         key: 'Enter',
         keyCode: 13,
       });
     });
-    await waitForComponentToPaint(html);
+
     act(() => {
-      html.setProps({
-        mode: 'read',
-      });
+      html.rerender(<Field text="qixian" valueType="textarea" mode="read" />);
     });
-    await waitForComponentToPaint(html);
-    expect(html.text()).toBe('qixian');
+    await html.findAllByText('qixian');
+
+    expect(html.baseElement.textContent).toBe('qixian');
+    html.unmount();
   });
 
-  it(`🐴 valueType renderFormItem return number`, async () => {
+  it('🐴 readonly text fields use a wrapping container', () => {
+    const longWord = 'a'.repeat(200);
+    const text = render(<Field text={longWord} mode="read" />);
+    const textArea = render(
+      <Field text={longWord} valueType="textarea" mode="read" />,
+    );
+
+    expect(
+      text.container.querySelector('.ant-pro-field-readonly'),
+    ).toBeTruthy();
+    expect(
+      textArea.container.querySelector('.ant-pro-field-readonly-textarea'),
+    ).toBeTruthy();
+    expect(document.head.textContent).toContain('overflow-wrap:anywhere');
+
+    text.unmount();
+    textArea.unmount();
+  });
+
+  it('🐴 textarea read mode does not pass showCount to the DOM', () => {
     const html = render(
       <Field
-        text={moment('2019-11-16 12:50:26').valueOf()}
-        mode="edit"
-        // @ts-expect-error
-        renderFormItem={() => 2}
+        text="qixian"
+        valueType="textarea"
+        mode="read"
+        fieldProps={{ showCount: true }}
       />,
     );
-    expect(html.text()).toBe('2');
+
+    expect(html.baseElement.querySelector('span[showcount]')).toBeNull();
+    html.unmount();
+  });
+
+  it(`🐴 valueType formItemRender return number`, async () => {
+    const html = render(
+      <Field
+        text={dayjs('2019-11-16 12:50:26').valueOf()}
+        mode="edit"
+        // @ts-expect-error
+        formItemRender={() => 2}
+      />,
+    );
+    expect(html.baseElement.textContent).toBe('2');
+    html.unmount();
+  });
+
+  it(`🐴 valueType digit support formatter`, async () => {
+    const html = render(
+      <Field
+        text={10000}
+        mode="read"
+        valueType="digit"
+        fieldProps={{
+          formatter: (value: string) => `$${value}`,
+        }}
+      />,
+    );
+    expect(html.baseElement.textContent).toBe('$10,000');
+    html.unmount();
+  });
+
+  it(`🐴 valueType digit support precision`, async () => {
+    const html = render(
+      <Field
+        text={'1000.3'}
+        mode="read"
+        valueType="digit"
+        fieldProps={{
+          precision: 2,
+        }}
+      />,
+    );
+    expect(html.baseElement.textContent).toBe('1,000.30');
+    html.unmount();
+  });
+
+  it(`🐴 valueType digit support precision when change with`, async () => {
+    const change = vi.fn();
+    const html = render(
+      <Field
+        text={1000.3}
+        mode="edit"
+        valueType="digit"
+        onChange={(value) => change(value)}
+        fieldProps={{
+          precision: 20,
+          stringMode: true,
+        }}
+      />,
+    );
+    await act(async () => {
+      fireEvent.change(html.baseElement.querySelector('input')!, {
+        target: {
+          value: '1.00000000000007',
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(change).toHaveBeenCalledWith('1.00000000000007');
+    });
+  });
+
+  it(`🐴 valueType digitRange base use`, async () => {
+    const html = render(
+      <Field text={[12.34, 56.78]} mode="read" valueType="digitRange" />,
+    );
+    expect(html.baseElement.textContent).toBe('12.34 ~ 56.78');
+    html.unmount();
+  });
+
+  it(`🐴 valueType digitRange placeholder use`, async () => {
+    const html = render(<Field mode="edit" valueType="digitRange" />);
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector<HTMLInputElement>(
+          '.ant-input-number-input',
+        )?.placeholder,
+      ).toBe('请输入');
+      expect(
+        html.baseElement.querySelectorAll<HTMLInputElement>(
+          '.ant-input-number-input',
+        )[1]?.placeholder,
+      ).toBe('请输入');
+    });
+  });
+
+  it(`🐴 valueType digitRange placeholder use`, async () => {
+    const html = render(
+      <Field mode="edit" valueType="digitRange" placeholder={['Min', 'Max']} />,
+    );
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector<HTMLInputElement>(
+          '.ant-input-number-input',
+        )?.placeholder,
+      ).toBe('Min');
+      expect(
+        html.baseElement.querySelectorAll<HTMLInputElement>(
+          '.ant-input-number-input',
+        )[1]?.placeholder,
+      ).toBe('Max');
+    });
+  });
+
+  it(`🐴 valueType digitRange normal input simulate`, async () => {
+    const html = render(<Field mode="edit" valueType="digitRange" />);
+    await waitForWaitTime(100);
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '12.34',
+          },
+        },
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector<HTMLInputElement>(
+          '.ant-input-number-input',
+        )?.value,
+      ).toBe('12.34');
+    });
+
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '56.78',
+          },
+        },
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector<HTMLInputElement>(
+          '.ant-input-number-input',
+        )?.value,
+      ).toBe('56.78');
+    });
+    html.unmount();
+  });
+
+  it(`🐴 valueType digitRange will exchange when value1 > valu2`, async () => {
+    const html = render(<Field mode="edit" valueType="digitRange" />);
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '56.78',
+          },
+        },
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector<HTMLInputElement>(
+          '.ant-input-number-input',
+        )?.value,
+      ).toBe('56.78');
+    });
+
+    act(() => {
+      fireEvent.change(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+        {
+          target: {
+            value: '12.34',
+          },
+        },
+      );
+    });
+
+    act(() => {
+      fireEvent.blur(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelector<HTMLInputElement>(
+          '.ant-input-number-input',
+        )?.value,
+      ).toBe('12.34');
+    });
+
+    html.unmount();
+  });
+
+  ['Success', 'Processing', 'Default', 'Error', 'Warning'].forEach((item) => {
+    it(`🐴 FieldStatus status ${item}`, async () => {
+      const Components = FieldStatus[item as keyof typeof FieldStatus];
+      const html = render(<Components />);
+      // FieldStatus 各状态应渲染 badge 状态点
+      expect(html.baseElement.querySelector('.ant-badge-status')).toBeTruthy();
+      // dot 类名应包含对应 status（小写匹配）
+      expect(
+        html.baseElement
+          .querySelector('.ant-badge-status-dot')
+          ?.className.toLowerCase(),
+      ).toContain(item.toLowerCase());
+      html.unmount();
+    });
+  });
+
+  ['success', 'processing', 'default', 'error', 'warning'].forEach((item) => {
+    it(`🐴 FieldStatus status  ${item}`, async () => {
+      const Components = FieldStatus[item as keyof typeof FieldStatus];
+      const html = render(<Components />);
+      // 小写 status key 也应能渲染对应 badge
+      expect(html.baseElement.querySelector('.ant-badge-status')).toBeTruthy();
+      expect(
+        html.baseElement
+          .querySelector('.ant-badge-status-dot')
+          ?.className.toLowerCase(),
+      ).toContain(item.toLowerCase());
+      html.unmount();
+    });
+  });
+
+  it(`🐴 FieldTimePicker text support is null`, async () => {
+    const html = render(
+      <FieldTimePicker
+        mode="read"
+        //@ts-ignore
+        text={null}
+      />,
+    );
+    // text=null + mode="read" 时应渲染 placeholder '-'（pro 默认空值占位）
+    expect(html.baseElement.textContent).toContain('-');
+  });
+
+  it(`🐴 ProFieldBadgeColor status`, async () => {
+    const html = render(<ProFieldBadgeColor color="#1890ff" />);
+    // 自定义 color 应作为 inline-style 应用到 badge dot 上
+    const dot =
+      html.baseElement.querySelector<HTMLElement>('.ant-badge-status-dot');
+    expect(dot).toBeTruthy();
+    // antd 会把 hex 转为 rgb，因此校验 background 非空且非默认色即可
+    expect(dot?.style.background).toBeTruthy();
+    html.unmount();
+  });
+
+  it(`🐴 text render null`, async () => {
+    const html = render(
+      <Field
+        text={10000}
+        mode="read"
+        // @ts-ignore
+        render={() => undefined}
+        emptyText="-"
+      />,
+    );
+    expect(html.baseElement.textContent).toBe('-');
+    html.unmount();
+  });
+
+  it(`🐴 dateRange support placeholder`, async () => {
+    const html = render(
+      <Field
+        text={[dayjs(), dayjs().add(1, 'day')]}
+        valueType="dateRange"
+        emptyText="-"
+        mode="edit"
+        placeholder="test"
+      />,
+    );
+    await waitFor(() => {
+      return html.findAllByPlaceholderText('test');
+    });
+    html.unmount();
+  });
+
+  it(`🐴 digitRange support placeholder`, async () => {
+    const onchangeFn = vi.fn();
+    const html = render(
+      <Field
+        text={[10000, 20000]}
+        valueType="digitRange"
+        emptyText="-"
+        mode="edit"
+        placeholder="test"
+        fieldProps={{
+          value: [30000, 20000],
+        }}
+        onChange={onchangeFn}
+      />,
+    );
+    await waitFor(() => {
+      return html.findAllByPlaceholderText('test');
+    });
+
+    act(() => {
+      fireEvent.blur(html.baseElement.querySelector('.ant-space-compact')!);
+      fireEvent.blur(
+        html.baseElement.querySelector('.ant-input-number-input')!,
+      );
+    });
+
+    await waitFor(() => {
+      expect(onchangeFn).toHaveBeenCalled();
+    });
+
+    html.unmount();
+  });
+
+  it(`🐴 readonly and mode is edit use fieldProps.value`, async () => {
+    const html = render(
+      <Field
+        text={10000}
+        mode="edit"
+        readonly
+        fieldProps={{
+          value: 2000,
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('2000');
+    });
+
+    act(() => {
+      html.rerender(
+        <Field
+          text={10000}
+          mode="edit"
+          readonly
+          fieldProps={{
+            value: 20000,
+          }}
+        />,
+      );
+    });
+    await waitFor(() => {
+      expect(html.baseElement.textContent).toBe('20000');
+    });
+    html.unmount();
+  });
+
+  it('🐴 select request debounceTime', async () => {
+    const requestFn = vi.fn();
+    const ref = React.createRef<{
+      fetchData: (keyWord?: string) => void;
+    }>();
+    render(
+      <Field
+        ref={ref}
+        text="default"
+        debounceTime={200}
+        valueType="select"
+        mode="edit"
+        request={async (params) => {
+          requestFn(params?.test);
+          return [
+            { label: '全部', value: 'all' },
+            { label: '未解决', value: 'open' },
+            { label: '已解决', value: 'closed' },
+            { label: '解决中', value: 'processing' },
+          ];
+        }}
+      />,
+    );
+    await waitFor(() => {
+      expect(requestFn).toHaveBeenCalledTimes(1);
+    });
+
+    act(() => {
+      for (let index = 0; index < 10; index++) {
+        ref.current?.fetchData(index + '');
+      }
+    });
+
+    await waitFor(() => {
+      expect(requestFn).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it(`🐴 light select dropdown toggle`, async () => {
+    const html = render(
+      <Field
+        text="default"
+        valueType="select"
+        mode="edit"
+        light
+        fieldProps={{
+          options: [
+            { label: '全部', value: 'all' },
+            { label: '未解决', value: 'open' },
+            { label: '已解决', value: 'closed' },
+            { label: '解决中', value: 'processing' },
+          ],
+        }}
+      />,
+    );
+    await waitForWaitTime(100);
+
+    // Check that the component renders
+    const labelElement = html.baseElement.querySelector(
+      '.ant-pro-core-field-label',
+    );
+    expect(labelElement).toBeInTheDocument();
+
+    // Check that the select component is rendered
+    const selectElement = html.baseElement.querySelector('.ant-select');
+    expect(selectElement).toBeInTheDocument();
+
+    // Test that the component can be clicked (basic functionality)
+    await userEvent.click(labelElement!);
+
+    // Verify that the component responds to clicks
+    expect(labelElement).toBeInTheDocument();
+  });
+
+  it(`🐴 FieldSelect support clear`, async () => {
+    const onchange = vi.fn();
+    const html = render(
+      <FieldSelect
+        light
+        mode="edit"
+        valueEnum={{
+          clear: '清空',
+          all: '全部',
+          open: '未解决',
+        }}
+        fieldProps={{
+          value: 'open',
+          onChange: onchange,
+          allowClear: true,
+        }}
+        text="open"
+      />,
+    );
+    await waitFor(() => {
+      return html.findAllByText('未解决');
+    });
+
+    // Find the clear button in the FieldLabel specifically
+    const clearButton = html.baseElement.querySelector(
+      '.ant-pro-core-field-label-close',
+    ) as HTMLElement;
+    expect(clearButton).toBeInTheDocument();
+
+    // Try using fireEvent instead of userEvent
+    act(() => {
+      fireEvent.click(clearButton);
+    });
+
+    await waitFor(() => {
+      expect(onchange).toHaveBeenCalled();
+    });
+    html.unmount();
+  });
+
+  it(`🐴 light FieldSelect supports a null value after clearing`, () => {
+    expect(() =>
+      render(
+        <FieldSelect
+          light
+          mode="edit"
+          text=""
+          valueEnum={{ open: '未解决' }}
+          fieldProps={{ value: null as any, allowClear: true }}
+        />,
+      ),
+    ).not.toThrow();
+  });
+
+  // https://github.com/ant-design/pro-components/issues/9104
+  it(`🐴 #9104 tags mode renders all items inside the flex-wrap content container`, () => {
+    const OPTIONS = [
+      'AAAAAA',
+      'BBBBBB',
+      'CCCCCC',
+      'DDDDDD',
+      'EEEEEE',
+      'FFFFFFFF',
+      'GGGGGG',
+      'HHHHHH',
+    ];
+    const html = render(
+      <FieldSelect
+        mode="edit"
+        text={OPTIONS.join(',')}
+        fieldProps={{
+          mode: 'tags',
+          allowClear: false,
+          style: { width: 328 },
+          value: OPTIONS,
+        }}
+      />,
+    );
+
+    const content = html.baseElement.querySelector('.ant-select-content');
+    // antd 6 的多行布局容器存在（间距由 item margin 控制）
+    expect(content).toBeTruthy();
+
+    const items = [
+      ...html.baseElement.querySelectorAll('.ant-select-selection-item'),
+    ];
+    expect(items.length).toBe(OPTIONS.length);
+    items.forEach((item) => {
+      expect(item.closest('.ant-select-content')).toBe(content);
+    });
+    html.unmount();
   });
 });

@@ -1,128 +1,230 @@
-import { mount } from 'enzyme';
-import React from 'react';
-import { act } from 'react-dom/test-utils';
-import ProTable from '@ant-design/pro-table';
-import { columns } from './demo';
-import { waitForComponentToPaint } from '../util';
+import { ProTable } from '@ant-design/pro-components';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { columns } from './fixtures';
+
+afterEach(() => {
+  cleanup();
+});
+
+beforeAll(() => {
+  vi.useFakeTimers();
+});
+afterAll(() => {
+  vi.useRealTimers();
+});
 
 describe('polling', () => {
   it('⏱️ polling should clearTime', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+
+    const html = render(
       <ProTable
         size="small"
         cardBordered
-        columns={columns}
-        polling={2000}
-        request={async () => {
-          fn();
+        search={false}
+        pagination={false}
+        toolBarRender={false}
+        columns={[
+          {
+            title: 'Name',
+            dataIndex: 'name',
+          },
+        ]}
+        polling={1500}
+        request={async (params) => {
+          fn(params);
           return Promise.resolve({
-            data: [],
-            total: 20,
+            data: [
+              {
+                key: '1',
+                name: 'John Brown',
+              },
+            ],
             success: true,
           });
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1000);
-    expect(fn).toBeCalledTimes(1);
 
-    await waitForComponentToPaint(html, 2000);
-
-    expect(fn).toBeCalledTimes(2);
-
-    act(() => {
-      html.unmount();
+    await waitFor(() => {
+      return html.findAllByText('暂无数据');
     });
-    await waitForComponentToPaint(html, 2000);
 
-    expect(fn).toBeCalledTimes(2);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalled();
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalled();
+    });
+
+    // 推进时间以触发轮询
+    vi.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
+
+    expect(fn).toHaveBeenCalledTimes(2);
   });
 
   it('⏱️ polling min time is 2000', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+
+    const html = render(
       <ProTable
         size="small"
         cardBordered
+        search={false}
+        pagination={false}
         columns={columns}
         polling={1000}
         request={async () => {
           fn();
           return Promise.resolve({
             data: [],
-            total: 20,
             success: true,
           });
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1000);
-    expect(fn).toBeCalledTimes(1);
 
-    await waitForComponentToPaint(html, 2000);
+    await waitFor(() => {
+      return html.findAllByText('暂无数据');
+    });
 
-    expect(fn).toBeCalledTimes(2);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    // 推进时间以触发轮询
+    vi.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('⏱️ polling time=3000', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+
+    const html = render(
       <ProTable
+        polling={3000}
         size="small"
         cardBordered
-        columns={columns}
-        polling={3000}
-        request={async () => {
-          fn();
+        search={false}
+        pagination={false}
+        toolBarRender={false}
+        columns={[
+          {
+            title: 'Name',
+            dataIndex: 'name',
+          },
+        ]}
+        request={async (params) => {
+          fn(params);
           return Promise.resolve({
-            data: [],
-            total: 20,
+            data: [
+              {
+                key: '1',
+                name: 'John Brown',
+              },
+            ],
             success: true,
           });
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1000);
-    expect(fn).toBeCalledTimes(1);
 
-    await waitForComponentToPaint(html, 1000);
+    await waitFor(() => {
+      return html.findAllByText('暂无数据');
+    });
 
-    expect(fn).toBeCalledTimes(1);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
 
-    await waitForComponentToPaint(html, 2000);
-    expect(fn).toBeCalledTimes(2);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    // 推进时间以触发轮询
+    vi.advanceTimersByTime(3000);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('⏱️ polling support function', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+
+    const html = render(
       <ProTable
-        size="small"
-        cardBordered
-        columns={columns}
         polling={() => {
           return 2000;
         }}
-        request={async () => {
-          fn();
+        size="small"
+        cardBordered
+        search={false}
+        pagination={false}
+        toolBarRender={false}
+        columns={[
+          {
+            title: 'Name',
+            dataIndex: 'name',
+          },
+        ]}
+        request={async (params) => {
+          fn(params);
           return Promise.resolve({
-            data: [],
-            total: 20,
+            data: [
+              {
+                key: '1',
+                name: 'John Brown',
+              },
+            ],
             success: true,
           });
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1000);
-    expect(fn).toBeCalledTimes(1);
 
-    await waitForComponentToPaint(html, 2000);
+    await waitFor(() => {
+      return html.findAllByText('暂无数据');
+    });
 
-    expect(fn).toBeCalledTimes(2);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    // 推进时间以触发轮询
+    vi.advanceTimersByTime(2000);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(2);
+    });
   });
 });

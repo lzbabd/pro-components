@@ -1,0 +1,237 @@
+import { get } from '@rc-component/util';
+import type { AnyObject } from 'antd/lib/_util/type';
+import React from 'react';
+import { isMergeCell } from '.';
+import type { ProFieldEmptyText } from '../../field';
+import type {
+  ProFieldValueType,
+  ProSchemaComponentTypes,
+  ProTableEditableFnType,
+  UseEditableUtilType,
+} from '../../utils';
+import { LabelIconTip, genCopyable, isNil } from '../../utils';
+import type { ContainerType } from '../Store/Provide';
+import type { ActionType, ProColumns } from '../typing';
+import cellRenderToFromItem from './cellRenderToFromItem';
+
+/** 转化列的定义 */
+type ColumnRenderInterface<T> = {
+  columnProps: ProColumns<T>;
+  text: any;
+  rowData: T;
+  index: number;
+  columnEmptyText?: ProFieldEmptyText;
+  type: ProSchemaComponentTypes;
+  counter: ReturnType<ContainerType>;
+  editableUtils: UseEditableUtilType;
+  subName: string[];
+  marginSM?: number;
+};
+
+/**
+ * 增加了 icon 的功能 render title
+ *
+ * @param item
+ */
+export const renderColumnsTitle = (item: ProColumns<any>) => {
+  const { title } = item;
+  const ellipsis =
+    typeof item?.ellipsis === 'boolean'
+      ? item?.ellipsis
+      : item?.ellipsis?.showTitle;
+  if (title && typeof title === 'function') {
+    return title(item, 'table', null);
+  }
+  return (
+    <LabelIconTip label={title} tooltip={item.tooltip} ellipsis={ellipsis} />
+  );
+};
+
+/** 判断是否为不可编辑的单元格 */
+function isNotEditableCell<T>(
+  text: any,
+  rowData: T,
+  index: number,
+  editable?: ProTableEditableFnType<T> | boolean,
+) {
+  if (typeof editable === 'boolean') {
+    return editable === false;
+  }
+  return editable?.(text, rowData, index) === false;
+}
+
+/**
+ * 默认的 filter 方法
+ *
+ * @param value
+ * @param record
+ * @param dataIndex
+ * @returns
+ */
+export const defaultOnFilter = (
+  value: string,
+  record: any,
+  dataIndex: string | string[],
+) => {
+  const recordElement = Array.isArray(dataIndex)
+    ? get(record, dataIndex as string[])
+    : record[dataIndex];
+  const itemValue = String(recordElement) as string;
+
+  return String(itemValue) === String(value);
+};
+
+/**
+ * 这个组件负责单元格的具体渲染
+ *
+ * @param param0
+ */
+export function columnRender<T extends AnyObject>({
+  columnProps,
+  text,
+  rowData,
+  index,
+  columnEmptyText,
+  counter,
+  type,
+  subName,
+  marginSM,
+  editableUtils,
+}: ColumnRenderInterface<T>): any {
+  const { action, prefixName } = counter;
+  const {
+    isEditable,
+    recordKey,
+    isRowEditable,
+    cellEditableKeys = [],
+  } = editableUtils.isEditable(rowData, index);
+  const { renderText = (val: any) => val } = columnProps;
+
+  const renderTextStr = renderText(text, rowData, index, action as ActionType);
+
+  // cell 粒度：当前列的复合键（`${rowKey}:${dataIndex}`）是否激活
+  const columnId = [columnProps.key ?? columnProps.dataIndex ?? index]
+    .flat(1)
+    .join('.');
+  const recordKeyStr = recordKey?.toString();
+  const isCellEditable =
+    !isRowEditable &&
+    cellEditableKeys.some(
+      (cellKey) =>
+        cellKey.startsWith(`${recordKeyStr}:`) &&
+        cellKey.slice(recordKeyStr.length + 1) === columnId,
+    );
+
+  const mode =
+    (isRowEditable || isCellEditable) &&
+    !isNotEditableCell(text, rowData, index, columnProps?.editable)
+      ? 'edit'
+      : 'read';
+
+  const textDom = cellRenderToFromItem<T>({
+    text: renderTextStr,
+    // #9002 未显式配置 valueType 时传 undefined（保留缺省标记），
+    // 由 ProFieldCore 决定是否按 valueEnum 推断 select，不要在此处补 'text'
+    valueType: columnProps.valueType as ProFieldValueType | undefined,
+    index,
+    rowData,
+    subName,
+    columnProps: {
+      ...columnProps,
+      // 为了兼容性，原来写了个错别字
+      // @ts-ignore
+      entry: rowData,
+      entity: rowData,
+    },
+    counter,
+    columnEmptyText,
+    type,
+    recordKey,
+    mode,
+    prefixName,
+    editableUtils,
+  });
+
+  const dom: React.ReactNode =
+    mode === 'edit'
+      ? textDom
+      : genCopyable(textDom, columnProps, renderTextStr, text, true);
+
+  const optionJustifyContent =
+    columnProps.align === 'center'
+      ? 'center'
+      : columnProps.align === 'right'
+        ? 'flex-end'
+        : 'flex-start';
+
+  /** 如果是编辑模式，并且 formItemRender 存在直接走 formItemRender */
+  if (mode === 'edit') {
+    if (columnProps.valueType === 'option') {
+      // cell 粒度编辑时 option 列不渲染整行的保存/取消按钮（无行级激活）
+      if (!isRowEditable) return null;
+      return (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: marginSM,
+            justifyContent: optionJustifyContent,
+          }}
+        >
+          {editableUtils.actionRender({
+            ...rowData,
+            index: columnProps.index || index,
+          })}
+        </div>
+      );
+    }
+    return dom;
+  }
+
+  if (!columnProps.render) {
+    const isReactRenderNode =
+      React.isValidElement(dom) || ['string', 'number'].includes(typeof dom);
+    return !isNil(dom) && isReactRenderNode ? dom : null;
+  }
+
+  const renderDom = columnProps.render(
+    dom,
+    rowData,
+    index,
+    {
+      ...(action as ActionType),
+      ...editableUtils,
+    },
+    {
+      ...columnProps,
+      isEditable,
+      isCellEditable,
+      type: 'table',
+    },
+  );
+
+  // 如果是合并单元格的，直接返回对象
+  if (isMergeCell(renderDom)) {
+    return renderDom;
+  }
+
+  if (
+    renderDom &&
+    columnProps.valueType === 'option' &&
+    Array.isArray(renderDom)
+  ) {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: optionJustifyContent,
+          gap: 8,
+        }}
+      >
+        {renderDom}
+      </div>
+    );
+  }
+  return renderDom as React.ReactNode;
+}

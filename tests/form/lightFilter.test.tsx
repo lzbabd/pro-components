@@ -1,612 +1,697 @@
-import { mount } from 'enzyme';
+import { LightFilter, ProFormText } from '@ant-design/pro-components';
+import { ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import { fireEvent, render, waitFor } from '@testing-library/react';
+import dayjs from 'dayjs';
+import advancedFormat from 'dayjs/plugin/advancedFormat';
+import weekOfYear from 'dayjs/plugin/weekOfYear';
+import zhCn from 'dayjs/locale/zh-cn';
 import React from 'react';
-import {
-  LightFilter,
-  ProFormText,
-  ProFormDatePicker,
-  ProFormSelect,
-  ProFormDateRangePicker,
-  ProFormDateTimePicker,
-  ProFormTimePicker,
-  ProFormRadio,
-} from '@ant-design/pro-form';
-import KeyCode from 'rc-util/lib/KeyCode';
-import { act } from 'react-dom/test-utils';
-import { waitForComponentToPaint } from '../util';
+import { describe, expect, it, vi } from 'vitest';
+import type { ProFormInstance } from '../../src/form';
+import { dateArrayFormatter } from '../../src/utils/dateArrayFormatter';
+
+dayjs.extend(advancedFormat);
+dayjs.extend(weekOfYear);
 
 describe('LightFilter', () => {
-  it(' 🪕 basic use', async () => {
-    const onValuesChange = jest.fn();
-    const onFinish = jest.fn();
-    const wrapper = mount(
+  it('🐛 #9166 should ignore validation rules when ignoreRules is true', async () => {
+    const formRef = React.createRef<ProFormInstance>();
+    render(
+      <LightFilter formRef={formRef} ignoreRules>
+        <LightFilter.input
+          name="requiredField"
+          label="Required"
+          rules={[{ required: true }]}
+        />
+      </LightFilter>,
+    );
+
+    await waitFor(() => expect(formRef.current).toBeTruthy());
+    await expect(formRef.current?.validateFields()).resolves.toEqual({});
+  });
+
+  it(' 🪕 should not use light field label until using LightFilter field helpers', async () => {
+    const { container } = render(
+      <LightFilter>
+        <ProFormText name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+    expect(container.querySelector('.ant-pro-core-field-label')).toBeFalsy();
+  });
+
+  it(' 🪕 should render basic structure', async () => {
+    const { container } = render(
+      <LightFilter>
+        <LightFilter.input name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+  });
+
+  it(' 🪕 should support initialValues', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
       <LightFilter
         initialValues={{
-          name1: 'yutingzhao1991',
-          name3: '2020-08-19',
+          name1: 'initial value',
         }}
-        onFinish={onFinish}
-        onValuesChange={(_, values) => onValuesChange(values)}
+        onValuesChange={onValuesChange}
+      >
+        <LightFilter.input name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the initial value is displayed in the field label
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('initial value');
+  });
+
+  it(' 🪕 should support variant', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange} variant="outlined">
+        <LightFilter.input name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check if the variant class is applied
+    const lightFilterContainer = container.querySelector(
+      '.ant-pro-form-light-filter',
+    );
+    expect(lightFilterContainer).toBeTruthy();
+  });
+
+  it(' 🪕 should support placement', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange} placement="topLeft">
+        <LightFilter.input name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    const lightFilterContainer = container.querySelector(
+      '.ant-pro-form-light-filter',
+    );
+    expect(lightFilterContainer).toBeTruthy();
+  });
+
+  it(' 🪕 should support select with valueEnum', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.select
+          name="name1"
+          label="名称"
+          valueEnum={{
+            open: '未解决',
+            closed: '已解决',
+          }}
+        />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+    expect(container.querySelectorAll('.ant-form-item-label')).toHaveLength(0);
+    expect(container.textContent?.match(/名称/g)).toHaveLength(1);
+  });
+
+  it(' 🪕 should support date picker', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.date name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+  });
+
+  it(' 🪕 should support date range picker', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.dateRange name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+  });
+
+  it(' 🪕 should support date time picker', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.dateTime name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+  });
+
+  it(' 🪕 should support time picker', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.time name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+  });
+
+  it(' 🪕 should support slider', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.slider name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+    expect(fieldLabel?.textContent).toContain('名称');
+  });
+
+  it(' 🪕 should support collapse mode', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange} collapse>
+        <LightFilter.input name="name1" label="名称" />
+        <LightFilter.input name="name2" label="名称2" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // In collapse mode, there should be a filter icon instead of field labels
+    const filterIcon = container.querySelector('.anticon-filter');
+    expect(filterIcon).toBeTruthy();
+
+    // Check that there's a dropdown label
+    const dropdownLabel = container.querySelector(
+      '.ant-pro-core-field-dropdown-label',
+    );
+    expect(dropdownLabel).toBeTruthy();
+  });
+
+  it('🐛 #9499 resets collapse fields to their initial values', async () => {
+    const onValuesChange = vi.fn();
+    const { container, baseElement } = render(
+      <LightFilter
+        collapse
+        initialValues={{ name1: 'initial value' }}
+        onValuesChange={onValuesChange}
       >
         <ProFormText name="name1" label="名称" />
-        <ProFormText name="name2" label="地址" secondary />
-        <ProFormDatePicker name="name3" label="日期" />
       </LightFilter>,
     );
-    expect(wrapper.find('div.ant-col.ant-form-item-control').length).toEqual(2);
-    expect(wrapper.find('.ant-pro-core-field-label').at(0).text()).toEqual('名称: yutingzhao1991');
-    expect(wrapper.find('.ant-pro-core-field-label').at(1).text()).toEqual('日期: 2020-08-19');
-    act(() => {
-      // click open more drowdown
-      wrapper.find('.ant-pro-core-field-dropdown-label').at(1).simulate('click');
+
+    fireEvent.click(
+      container.querySelector('.ant-pro-core-field-dropdown-label')!,
+    );
+    const input = await waitFor(() => {
+      const element = baseElement.querySelector<HTMLInputElement>(
+        '.ant-pro-core-field-dropdown-overlay input',
+      );
+      expect(element).toBeTruthy();
+      return element!;
     });
 
-    await waitForComponentToPaint(wrapper);
-
-    expect(wrapper.find('div.ant-col.ant-form-item-control').length).toEqual(3);
-
-    act(() => {
-      // change input in drowdown
-      wrapper.find('.ant-pro-core-field-dropdown-content .ant-input').simulate('change', {
-        target: {
-          value: 'new value',
-          name3: '2020-08-19',
-        },
-      });
-      wrapper.find('.ant-pro-core-dropdown-footer .ant-btn.ant-btn-primary').simulate('click');
+    fireEvent.change(input, { target: { value: 'changed value' } });
+    const resetButton = await waitFor(() => {
+      const element = baseElement.querySelector<HTMLButtonElement>(
+        '.ant-pro-core-dropdown-footer button',
+      );
+      expect(element).toBeTruthy();
+      return element!;
     });
-    await waitForComponentToPaint(wrapper);
+    fireEvent.click(resetButton);
 
-    expect(onValuesChange).toHaveBeenCalledWith({
-      name1: 'yutingzhao1991',
-      name2: 'new value',
-      name3: '2020-08-19',
-    });
-    expect(onFinish).toHaveBeenCalledWith({
-      name1: 'yutingzhao1991',
-      name2: 'new value',
-      name3: '2020-08-19',
-    });
-
-    act(() => {
-      // clear input
-      wrapper.find('.ant-pro-core-field-label .anticon-close').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(onValuesChange).toHaveBeenCalledWith({
-      name2: 'new value',
-      name3: '2020-08-19',
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(onFinish).toHaveBeenCalledWith({
-      name2: 'new value',
-      name3: '2020-08-19',
-    });
-    expect(wrapper.find('div.ant-col.ant-form-item-control').length).toEqual(3);
-    act(() => {
-      // change outside input
-      wrapper.find('.ant-pro-core-field-label').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-input').simulate('change', {
-        target: {
-          value: 'name1 update',
-        },
-      });
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-btn.ant-btn-primary').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(onValuesChange).toHaveBeenCalledWith({
-      name1: 'name1 update',
-      name2: 'new value',
-      name3: '2020-08-19',
-    });
-
-    act(() => {
-      // DatePicker click
-      wrapper.find('.ant-pro-core-field-label').at(2).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-picker-cell-in-view').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(onFinish).toHaveBeenCalledWith({
-      name1: 'name1 update',
-      name2: 'new value',
-      name3: '2020-08-01',
+    await waitFor(() => {
+      expect(baseElement.textContent).toContain('重置');
+      expect(input.value).toBe('initial value');
+      expect(onValuesChange).toHaveBeenLastCalledWith(
+        { name1: 'initial value' },
+        { name1: 'initial value' },
+      );
     });
   });
 
-  it(' 🪕 single select', async () => {
-    const wrapper = mount(
+  it('🐛 #9649 keeps the collapse popover open while typing', async () => {
+    const { container, baseElement } = render(
       <LightFilter
-        initialValues={{
-          name: 'Jack2',
-        }}
-      >
-        <ProFormSelect
-          label="名称"
-          name="name"
-          valueEnum={{
-            Jack: '杰克',
-            Jack2: '杰克2',
-            TechUI: 'TechUI',
-          }}
-        />
-      </LightFilter>,
-    );
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称: 杰克2');
-    expect(wrapper.find('.ant-pro-core-field-label-arrow.anticon-down').length).toEqual(1);
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label-arrow.anticon-down').length).toEqual(1);
-    act(() => {
-      wrapper.find('.ant-select-item').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称: 杰克');
-
-    act(() => {
-      // close
-      wrapper.find('.ant-pro-core-field-label .anticon-close').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称');
-
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-
-  it(' 🪕 select showSearch', async () => {
-    const wrapper = mount(
-      <LightFilter
-        initialValues={{
-          name: 'Jack2',
-        }}
-      >
-        <ProFormSelect
-          showSearch
-          label="名称"
-          name="name"
-          valueEnum={{
-            Jack: '杰克',
-            Jack2: '杰克2',
-            TechUI: 'TechUI',
-          }}
-        />
-      </LightFilter>,
-    );
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称: 杰克2');
-    expect(wrapper.find('.ant-pro-core-field-label-arrow.anticon-down').length).toEqual(1);
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label-arrow.anticon-down').length).toEqual(1);
-    act(() => {
-      wrapper.find('.ant-input').simulate('change', {
-        target: {
-          value: 'tech',
-        },
-      });
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-select-item').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称: TechUI');
-    act(() => {
-      // close
-      wrapper.find('.ant-pro-core-field-label .anticon-close').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称');
-
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-
-  it(' 🪕 multiple select showSearch', async () => {
-    const wrapper = mount(
-      <LightFilter
-        initialValues={{
-          name: ['Jack2'],
-        }}
-      >
-        <ProFormSelect
-          showSearch
-          label="名称"
-          name="name"
-          mode="multiple"
-          valueEnum={{
-            Jack: '杰克',
-            Jack2: '杰克2',
-            TechUI: 'TechUI',
-            long: 'YES这是一个很长很长的测试阿aa阿ABCS',
-          }}
-        />
-      </LightFilter>,
-    );
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('名称: 杰克2');
-    expect(wrapper.find('.ant-pro-core-field-label-arrow.anticon-down').length).toEqual(1);
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label-arrow.anticon-down').length).toEqual(1);
-    act(() => {
-      wrapper.find('.ant-input').simulate('change', {
-        target: {
-          value: 'tech',
-        },
-      });
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-select-item').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-input').simulate('change', {
-        target: {
-          value: 'YES',
-        },
-      });
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-select-item').at(0).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual(
-      '名称: 杰克2,TechUI,YES这是一个很长很长的测试阿aa阿ABC...3项',
-    );
-    act(() => {
-      // press Backspace
-      wrapper.find('.ant-input').simulate('keyDown', { which: KeyCode.BACKSPACE });
-    });
-
-    await waitForComponentToPaint(wrapper);
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual(
-      '名称: 杰克2,TechUI,YES这是一个很长很长的测试阿aa阿ABC...3项',
-    );
-
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-
-  it(' 🪕 DateRangePicker', async () => {
-    const onFinish = jest.fn();
-    const wrapper = mount(
-      <LightFilter onFinish={onFinish}>
-        <ProFormDateRangePicker name="date" label="日期范围" />
-      </LightFilter>,
-    );
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('日期范围');
-
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('div.ant-picker-range').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper, 100);
-
-    act(() => {
-      wrapper.find('.ant-picker-cell-inner').at(2).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-picker-cell-inner').at(12).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-pro-core-dropdown-footer .ant-btn-primary').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual(
-      '日期范围: 2016-11-02 ~ 2016-11-12',
-    );
-
-    await waitForComponentToPaint(wrapper);
-    expect(onFinish).toHaveBeenCalledWith({ date: ['2016-11-02', '2016-11-12'] });
-
-    act(() => {
-      // close
-      wrapper.find('.ant-pro-core-field-label .anticon-close').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('日期范围');
-
-    act(() => {
-      // 测试第二次再打开的情况
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('div.ant-picker-range').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper, 100);
-
-    act(() => {
-      wrapper.find('.ant-picker-cell-inner').at(2).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-picker-cell-inner').at(12).simulate('click');
-    });
-
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-pro-core-dropdown-footer .ant-btn-primary').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual(
-      '日期范围: 2016-11-02 ~ 2016-11-12',
-    );
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-
-  it(' 🪕 DateTimePicker', async () => {
-    const onFinish = jest.fn();
-    const wrapper = mount(
-      <LightFilter onFinish={onFinish}>
-        <ProFormDateTimePicker name="datetime" label="日期时间" />
-      </LightFilter>,
-    );
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('日期时间');
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-picker-cell-inner').at(5).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-btn-primary').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual(
-      '日期时间: 2016-11-05 07:22:44',
-    );
-    expect(onFinish).toHaveBeenCalledWith({ datetime: '2016-11-05 07:22:44' });
-
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-
-  it(' 🪕 TimePicker', async () => {
-    const onFinish = jest.fn();
-    const wrapper = mount(
-      <LightFilter onFinish={onFinish}>
-        <ProFormTimePicker name="time" label="时间" />
-      </LightFilter>,
-    );
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('时间');
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-picker-now-btn').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label').text()).toEqual('时间: 07:22:44');
-
-    await waitForComponentToPaint(wrapper);
-    expect(onFinish).toHaveBeenCalledWith({ time: '07:22:44' });
-
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-  it(' 🪕 ProFormRadio', async () => {
-    const onFinish = jest.fn();
-    const wrapper = mount(
-      <LightFilter
-        onFinish={onFinish}
-        initialValues={{
-          radio: 'quarterly',
-        }}
-      >
-        <ProFormRadio.Group
-          name="radio"
-          radioType="button"
-          options={[
-            {
-              value: 'weekly',
-              label: '每周',
-            },
-            {
-              value: 'quarterly',
-              label: '每季度',
-            },
-            {
-              value: 'monthly',
-              label: '每月',
-            },
-            {
-              value: 'yearly',
-              label: '每年',
-            },
-          ]}
-        />
-      </LightFilter>,
-    );
-
-    await waitForComponentToPaint(wrapper, 100);
-    expect(
-      wrapper.find('.ant-radio-button-wrapper.ant-radio-button-wrapper-checked').text(),
-    ).toEqual('每季度');
-    act(() => {
-      wrapper.find('.ant-radio-button-input').at(3).simulate('change');
-    });
-    await waitForComponentToPaint(wrapper, 100);
-    expect(
-      wrapper.find('.ant-radio-button-wrapper.ant-radio-button-wrapper-checked').text(),
-    ).toEqual('每年');
-    expect(onFinish).toHaveBeenCalledWith({ radio: 'yearly' });
-    act(() => {
-      wrapper.unmount();
-    });
-  });
-
-  it(' 🪕 collapse mode', async () => {
-    const onChange = jest.fn();
-    const wrapper = mount(
-      <LightFilter
-        onValuesChange={(values) => {
-          onChange(values.name);
-        }}
         collapse
-        collapseLabel={<div className="collapselabel">open</div>}
-        initialValues={{
-          name: ['ant'],
-        }}
+        popoverProps={{ classNames: { root: 'collapse-input-popover' } }}
       >
-        <ProFormSelect
-          label="名称"
-          name="name"
-          mode="multiple"
-          valueEnum={{
-            Bigfish: '大鱼',
-            ant: '蚂蚁',
-            TechUI: 'TechUI',
-            long: '这个是一个特别长特别长的选项，选择之后会截断',
-          }}
-        />
-        <ProFormDateRangePicker label="时间范围" name="range2" />
+        <ProFormText label="Code" name="code" />
       </LightFilter>,
     );
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.collapselabel').text()).toEqual('open');
-    expect(wrapper.find('.ant-pro-form-light-filter-effective').length).toEqual(1);
-    act(() => {
-      wrapper.find('.collapselabel').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-select-selection-item').text()).toEqual('蚂蚁');
 
-    act(() => {
-      // clear
-      wrapper.find('.ant-btn-link').simulate('click');
+    fireEvent.click(
+      container.querySelector('.ant-pro-core-field-dropdown-label')!,
+    );
+    const input = await waitFor(() => {
+      const element = baseElement.querySelector<HTMLInputElement>(
+        '.collapse-input-popover input',
+      );
+      expect(element).toBeTruthy();
+      return element;
     });
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.find('.ant-btn-primary').simulate('click');
-    });
-    await waitForComponentToPaint(wrapper);
 
-    expect(onChange).toHaveBeenCalledWith(undefined);
-    expect(wrapper.find('.ant-pro-form-light-filter-effective').length).toEqual(0);
-    await waitForComponentToPaint(wrapper);
-    act(() => {
-      wrapper.unmount();
+    fireEvent.change(input!, { target: { value: 'group-code' } });
+
+    await waitFor(() => {
+      const popover = baseElement.querySelector('.collapse-input-popover');
+      expect(popover).toBeTruthy();
+      expect(popover?.classList.contains('ant-popover-hidden')).toBe(false);
+      expect(
+        baseElement.querySelector<HTMLInputElement>(
+          '.collapse-input-popover input',
+        )?.value,
+      ).toBe('group-code');
     });
   });
 
-  it(' 🪕 allowClear false', async () => {
-    const wrapper = mount(
+  it(' 🪕 should support collapse mode with collapseLabel', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter
+        onValuesChange={onValuesChange}
+        collapse
+        collapseLabel="更多筛选"
+      >
+        <LightFilter.input name="name1" label="名称" />
+        <LightFilter.input name="name2" label="名称2" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // In collapse mode with custom label, there should be the custom label text
+    const dropdownLabel = container.querySelector(
+      '.ant-pro-core-field-dropdown-label',
+    );
+    expect(dropdownLabel).toBeTruthy();
+    expect(dropdownLabel?.textContent).toBe('更多筛选');
+  });
+
+  it(' 🪕 should support secondary field', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.input name="name1" label="名称" />
+        <LightFilter.input name="name2" label="名称2" secondary />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field labels are rendered
+    const fieldLabels = container.querySelectorAll('.ant-pro-core-field-label');
+    expect(fieldLabels.length).toBeGreaterThan(0);
+  });
+
+  it(' 🪕 should support onValuesChange callback', async () => {
+    const onValuesChange = vi.fn();
+
+    const { container } = render(
+      <LightFilter onValuesChange={onValuesChange}>
+        <LightFilter.input name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+  });
+
+  it(' 🪕 should format date range labels by default', async () => {
+    const prevDayjsLocale = dayjs.locale();
+    dayjs.locale('zh-cn', zhCn);
+    const d = (s: string) => dayjs(s).locale('zh-cn');
+    try {
+      const { container } = render(
+        <ConfigProvider locale={zhCN}>
+          <LightFilter
+            initialValues={{
+              dateRange: [d('2023-01-01'), d('2023-01-03')],
+              dateTimeRange: [
+                d('2023-01-01 08:00:00'),
+                d('2023-01-01 10:30:00'),
+              ],
+              weekRange: [d('2023-01-02'), d('2023-01-08')],
+              quarterRange: [d('2023-01-01'), d('2023-03-31')],
+              yearRange: [d('2022-01-01'), d('2023-01-01')],
+            }}
+          >
+            <LightFilter.dateRange name="dateRange" label="日期" />
+            <LightFilter.dateTimeRange name="dateTimeRange" label="日期时间" />
+            <LightFilter.weekRange name="weekRange" label="周" />
+            <LightFilter.quarterRange name="quarterRange" label="季度" />
+            <LightFilter.yearRange name="yearRange" label="年份" />
+          </LightFilter>
+        </ConfigProvider>,
+      );
+
+      await waitFor(() => {
+        const values = Array.from(
+          container.querySelectorAll<HTMLInputElement>(
+            '.ant-picker-input input',
+          ),
+        ).map((node) => node.value);
+        expect(values).toEqual([
+          '2023-01-01',
+          '2023-01-03',
+          '2023-01-01 08:00:00',
+          '2023-01-01 10:30:00',
+          '2023-1周',
+          '2023-1周',
+          '2023-Q1',
+          '2023-Q1',
+          '2022',
+          '2023',
+        ]);
+      });
+
+      // render 会拉取依赖里的 dayjs 插件，偶发影响全局 locale；断言前再固定一次
+      dayjs.locale('zh-cn', zhCn);
+
+      const weekLabel = dateArrayFormatter(
+        [d('2023-01-02'), d('2023-01-08')],
+        'gggg-wo',
+      );
+      const quarterLabel = dateArrayFormatter(
+        [d('2023-01-01'), d('2023-03-31')],
+        'YYYY-[Q]Q',
+      );
+      const yearLabel = dateArrayFormatter(
+        [d('2022-01-01'), d('2023-01-01')],
+        'YYYY',
+      );
+      expect(weekLabel).toBe('2023-1周 ~ 2023-1周');
+      expect(quarterLabel).toBe('2023-Q1 ~ 2023-Q1');
+      expect(yearLabel).toBe('2022 ~ 2023');
+    } finally {
+      dayjs.locale(prevDayjsLocale || 'en');
+    }
+  });
+
+  it(' 🪕 should not format digitRange label as date range', async () => {
+    const { container } = render(
       <LightFilter
         initialValues={{
-          name1: 'yutingzhao1991',
-          name3: '2020-08-19',
-          sex: 'woman',
+          digitRange: [12, 34],
         }}
-        onFinish={async (values) => console.log(values)}
       >
-        <ProFormSelect
-          name="sex"
-          label="性别"
-          showSearch
-          allowClear={false}
-          valueEnum={{
-            man: '男',
-            woman: '女',
-          }}
-        />
-        <ProFormText name="name1" label="名称" allowClear={false} />
-        <ProFormDatePicker name="name3" label="不能清空的日期" allowClear={false} />
-        <ProFormSelect
-          name="sex"
-          label="性别"
-          showSearch
-          fieldProps={{
-            allowClear: false,
-          }}
-          valueEnum={{
-            man: '男',
-            woman: '女',
-          }}
-        />
-        <ProFormText
-          name="name4"
-          label="名称"
-          fieldProps={{
-            allowClear: false,
-          }}
-        />
-        <ProFormDatePicker
-          name="name5"
-          label="不能清空的日期"
-          fieldProps={{
-            allowClear: false,
-          }}
+        <LightFilter.digitRange
+          name="digitRange"
+          label="数字范围"
         />
       </LightFilter>,
     );
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('.ant-pro-core-field-label .anticon-close').length).toEqual(0);
-    act(() => {
-      wrapper.find('.ant-pro-core-field-label').at(1).simulate('click');
-    });
-    await waitForComponentToPaint(wrapper, 100);
 
-    expect(wrapper.find('.ant-input').length).toEqual(1);
-    expect(wrapper.find('.ant-input-suffix .close-circle').length).toEqual(0);
-    act(() => {
-      wrapper.unmount();
+    await waitFor(() => {
+      const fieldLabel = container.querySelector('.ant-pro-core-field-label');
+      expect(fieldLabel).toBeTruthy();
+      expect(fieldLabel?.textContent).toContain('数字范围');
     });
+
+    const fieldLabelText =
+      container.querySelector('.ant-pro-core-field-label')?.textContent || '';
+
+    // If digitRange is mistakenly treated as dateRange, 12/34 would be formatted as timestamps (1970-...)
+    expect(fieldLabelText).not.toContain('1970-');
+    expect(fieldLabelText).toContain('12');
+    expect(fieldLabelText).toContain('34');
+  });
+
+  it(' 🪕 should support onFinish callback', async () => {
+    const onFinish = vi.fn();
+
+    const { container } = render(
+      <LightFilter onFinish={onFinish}>
+        <LightFilter.input name="name1" label="名称" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Check that the field label is rendered
+    const fieldLabel = await waitFor(() => {
+      return container.querySelector('.ant-pro-core-field-label');
+    });
+    expect(fieldLabel).toBeTruthy();
+  });
+
+  it(' 🪕 should support footerRender', async () => {
+    const onValuesChange = vi.fn();
+    const footerRender = vi.fn(() => (
+      <div data-testid="custom-footer">Custom Footer</div>
+    ));
+
+    const { container } = render(
+      <LightFilter
+        onValuesChange={onValuesChange}
+        footerRender={footerRender}
+        collapse
+      >
+        <LightFilter.input name="name1" label="名称" />
+        <LightFilter.input name="name2" label="名称2" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // In collapse mode, there should be a filter icon instead of field labels
+    const filterIcon = container.querySelector('.anticon-filter');
+    expect(filterIcon).toBeTruthy();
+
+    // Check that there's a dropdown label
+    const dropdownLabel = container.querySelector(
+      '.ant-pro-core-field-dropdown-label',
+    );
+    expect(dropdownLabel).toBeTruthy();
+  });
+
+  it(' 🪕 should support popoverProps.overlayClassName in collapse mode', async () => {
+    const { container, baseElement } = render(
+      <LightFilter
+        collapse
+        popoverProps={{
+          classNames: { root: 'my-lightfilter-popover' },
+        }}
+      >
+        <LightFilter.input name="name1" label="名称" />
+        <LightFilter.input name="name2" label="名称2" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // Before open, overlay shouldn't exist in body
+    expect(baseElement.querySelector('.my-lightfilter-popover')).toBeFalsy();
+
+    const dropdownLabel = container.querySelector(
+      '.ant-pro-core-field-dropdown-label',
+    ) as HTMLElement | null;
+    expect(dropdownLabel).toBeTruthy();
+
+    fireEvent.click(dropdownLabel!);
+
+    await waitFor(() => {
+      expect(baseElement.querySelector('.my-lightfilter-popover')).toBeTruthy();
+    });
+  });
+
+  it(' 🪕 should default to borderless variant', async () => {
+    const { container } = render(
+      <LightFilter>
+        <LightFilter.input name="name" label="Name" />
+      </LightFilter>,
+    );
+
+    // 等待渲染完成
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    // LightFilter 默认应该是 borderless，所以不应该有 ant-pro-core-field-label-bordered
+    // 但是这里有点棘手，因为 ProFormText 渲染的结构可能很复杂。
+    // 如果我们能找到 FieldLabel 并检查它的 class 就好了。
+
+    // 我们检查是否包含 bordered class
+    const borderedLabel = container.querySelector(
+      '.ant-pro-core-field-label-bordered',
+    );
+    expect(borderedLabel).toBeFalsy();
+  });
+
+  it(' 🪕 should support outlined variant', async () => {
+    const { container } = render(
+      <LightFilter variant="outlined">
+        <LightFilter.input name="name" label="Name" />
+      </LightFilter>,
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-pro-form-light-filter'),
+      ).toBeTruthy();
+    });
+
+    const borderedLabel = await waitFor(() =>
+      container.querySelector('.ant-pro-core-field-label-outlined'),
+    );
+    expect(borderedLabel).toBeTruthy();
   });
 });

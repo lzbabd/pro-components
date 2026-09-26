@@ -1,0 +1,528 @@
+﻿import type { Theme } from '@ant-design/cssinjs';
+import { useCacheToken } from '@ant-design/cssinjs';
+import { ConfigProvider as AntdConfigProvider, theme as antdTheme } from 'antd';
+import zh_CN from 'antd/lib/locale/zh_CN';
+// dayjs 的中文 locale 在这里按需预注入。
+// 注意：ProProvider 支持 34 种语言，但 dayjs 不会自动引入对应 locale 包；
+// 若业务需要切换到其他语言的 dayjs 行为，需要消费方在应用入口自行 `import 'dayjs/locale/xx'`，
+// 否则运行时 `dayjs.locale(...)` 会静默回退到 en。
+import dayjs from 'dayjs';
+import 'dayjs/locale/zh-cn';
+import React, { useContext, useEffect, useMemo } from 'react';
+import { SWRConfig, useSWRConfig } from 'swr';
+import type { IntlType } from './intl';
+import { findIntlKeyByAntdLocaleKey, intlMap, zhCNIntl } from './intl';
+import type { DeepPartial, ProTokenType } from './typing/layoutToken';
+import { getLayoutDesignToken } from './typing/layoutToken';
+import type { ProAliasToken } from './useStyle';
+import { shallowMergeOneLevel } from './utils/merge';
+
+export * from './intl';
+export * from './useStyle';
+
+export { DeepPartial, ProTokenType };
+
+type OmitUndefined<T> = {
+  [P in keyof T]: NonNullable<T[P]>;
+};
+
+/**
+ * 过滤掉对象中值为 `undefined` 的字段；若过滤后没有任何字段保留，则返回 `undefined`。
+ *
+ * 调用方利用 "空对象 → undefined" 这个副作用，把空配置透传给 antd ConfigProvider，
+ * 从而让 antd 走默认值。因此返回类型必须允许 `undefined`，不能撒谎为 `OmitUndefined<T>`。
+ */
+const omitUndefined = <T extends Record<string, any>>(
+  obj: T,
+): OmitUndefined<T> | undefined => {
+  const newObj = {} as Record<string, any>;
+  Object.keys(obj || {}).forEach((key) => {
+    if (obj[key] !== undefined) {
+      newObj[key] = obj[key];
+    }
+  });
+  if (Object.keys(newObj).length < 1) {
+    return undefined;
+  }
+  return newObj as OmitUndefined<T>;
+};
+
+/**
+ * 用于判断当前是否需要开启哈希（Hash）模式。
+ *
+ * 下列场景返回 `false`（关闭 hash，便于快照/调试）：
+ * - `process.env.NODE_ENV === 'test'`（单元测试快照稳定）
+ * - `process.env.NODE_ENV === 'development'`（本地开发时样式调试更直观）
+ *
+ * 其余环境（含生产、未设置 NODE_ENV）一律返回 `true`。
+ */
+export const isNeedOpenHash = () => {
+  if (typeof process === 'undefined') return true;
+  const env = process.env.NODE_ENV?.toLowerCase();
+  if (env === 'test' || env === 'development') {
+    return false;
+  }
+  return true;
+};
+
+/** Resolve hashing without overriding an outer antd ConfigProvider. */
+export const resolveProConfigHashed = (
+  propsHashed: boolean | undefined,
+  inheritedProHashed: boolean | undefined,
+  parentHashId: string | undefined,
+  needOpenHash = isNeedOpenHash(),
+) =>
+  propsHashed !== false &&
+  inheritedProHashed !== false &&
+  parentHashId !== '' &&
+  needOpenHash;
+
+/**
+ * 解析最终使用的 intl 实例。优先级从高到低：
+ * 1. 组件 props 显式传入的 `intl`
+ * 2. 父级 Provider 里非 `default` 的 intl（即用户已显式配置过）
+ * 3. 根据 antd 的 locale 推断（zh_CN → zh-CN → zhCNIntl）
+ * 4. 兜底 zh-CN
+ */
+const resolveIntl = (
+  propsIntl: IntlType | undefined,
+  parentIntl: IntlType | undefined,
+  antdLocaleName: string | undefined,
+): IntlType => {
+  if (propsIntl) return propsIntl;
+  if (parentIntl && parentIntl.locale !== 'default') return parentIntl;
+  if (antdLocaleName) {
+    const key = findIntlKeyByAntdLocaleKey(antdLocaleName);
+    const found = key ? intlMap[key as keyof typeof intlMap] : undefined;
+    if (found) return found;
+  }
+  return zhCNIntl;
+};
+
+/**
+ * 用于配置 ValueEnum 的通用配置
+ */
+export type ProSchemaValueEnumType = {
+  /** @name 演示的文案 */
+  text: React.ReactNode;
+
+  /** @name 预定的颜色 */
+  status?: string;
+  /** @name 自定义的颜色 */
+  color?: string;
+  /** @name 是否禁用 */
+  disabled?: boolean;
+};
+
+/**
+ * 支持 Map 和 Object
+ *
+ * @name ValueEnum 的类型
+ */
+type ProSchemaValueEnumMap = Map<
+  string | number | boolean,
+  ProSchemaValueEnumType | React.ReactNode
+>;
+
+/**
+ * 支持 Map 和 Object
+ */
+type ProSchemaValueEnumObj = Record<
+  string,
+  ProSchemaValueEnumType | React.ReactNode
+>;
+
+/**
+ * BaseProFieldFC 的类型设置
+ */
+export type BaseProFieldFC = {
+  /** 值的类型 */
+  text: React.ReactNode;
+  /** 放置到组件上 props */
+  fieldProps?: any;
+  /**
+   * 组件的渲染模式类型
+   * @option read 渲染只读模式
+   * @option edit 渲染编辑模式
+   * */
+  mode?: ProFieldFCMode;
+  /** 轻量模式 */
+  light?: boolean;
+  /** Label */
+  label?: React.ReactNode;
+  /** 映射值的类型 */
+  valueEnum?: ProSchemaValueEnumObj | ProSchemaValueEnumMap;
+  /** 唯一的key，用于网络请求 */
+  proFieldKey?: React.Key;
+};
+
+export type ProFieldFCMode = 'read' | 'edit' | 'update';
+
+/** Render 第二个参数，里面包含了一些常用的参数 */
+export type ProFieldFCRenderProps = {
+  mode?: ProFieldFCMode;
+  readonly?: boolean;
+  placeholder?: string | string[];
+  value?: any;
+  onChange?: (...rest: any[]) => void;
+} & BaseProFieldFC;
+
+export type ProRenderFieldPropsType = {
+  /**
+   * 自定义只读模式的渲染器
+   * @params props 关于dom的配置
+   * @params dom 默认的 dom
+   * @return 返回一个用于读的 dom
+   */
+  render?:
+    | ((
+        text: any,
+        props: Omit<ProFieldFCRenderProps, 'value' | 'onChange'>,
+        dom: React.JSX.Element,
+      ) => React.JSX.Element)
+    | undefined;
+  /**
+   * 一个自定义的编辑渲染器。
+   * @params text 默认的值类型
+   * @params props 关于dom的配置
+   * @params dom 默认的 dom
+   * @return 返回一个用于编辑的dom
+   */
+  formItemRender?:
+    | ((
+        text: any,
+        props: ProFieldFCRenderProps,
+        dom: React.JSX.Element,
+      ) => React.JSX.Element)
+    | undefined;
+};
+
+export type ParamsType = Record<string, any>;
+
+/**
+ * 自带的token 配置
+ */
+export type ConfigContextPropsType = {
+  intl?: IntlType;
+  /** 自定义或覆盖 valueType → render；键可与内置 `ProFieldBuiltinValueType` 重叠，也可为任意字符串 */
+  valueTypeMap?: Record<string, ProRenderFieldPropsType>;
+  token: ProAliasToken;
+  hashId?: string;
+  hashed?: boolean;
+  dark?: boolean;
+  prefixCls?: string;
+};
+
+/* Creating a context object with the default values. */
+const ProConfigContext = React.createContext<ConfigContextPropsType>({
+  intl: {
+    ...zhCNIntl,
+    locale: 'default',
+  },
+  valueTypeMap: {},
+  hashed: true,
+  dark: false,
+  token: {
+    ...antdTheme.getDesignToken(),
+    proComponentsCls: '.ant-pro',
+    antCls: '.ant',
+    iconCls: '.anticon',
+    themeId: 0,
+  },
+  prefixCls: '.ant-pro',
+});
+
+export const { Consumer: ConfigConsumer } = ProConfigContext;
+
+/**
+ * 组件解除挂载后清空一下 cache
+ * @date 2022-11-28
+ * @returns null
+ */
+const CacheClean = () => {
+  const { cache } = useSWRConfig();
+
+  useEffect(() => {
+    return () => {
+      // is a map
+      // @ts-ignore
+      cache.clear();
+    };
+  }, []);
+  return null;
+};
+
+/**
+ * 用于配置 Pro 的组件,分装之后会简单一些
+ * @param props
+ * @returns
+ */
+const ConfigProviderContainer: React.FC<{
+  children: React.ReactNode;
+  autoClearCache?: boolean;
+  valueTypeMap?: Record<string, ProRenderFieldPropsType>;
+  token?: DeepPartial<ProAliasToken>;
+  hashed?: boolean;
+  dark?: boolean;
+  prefixCls?: string;
+  intl?: IntlType;
+}> = (props) => {
+  const {
+    children,
+    dark,
+    valueTypeMap,
+    autoClearCache = false,
+    token: propsToken,
+    prefixCls,
+    intl,
+  } = props;
+  const { locale, getPrefixCls, ...restConfig } = useContext(
+    AntdConfigProvider.ConfigContext,
+  );
+  const tokenContext = antdTheme.useToken?.();
+  const proProvide = useContext(ProConfigContext);
+
+  /**
+   * pro 的 类
+   * @type {string}
+   * @example .ant-pro
+   */
+  const proComponentsCls: string = prefixCls
+    ? `.${prefixCls}`
+    : `.${getPrefixCls()}-pro`;
+
+  const antCls = '.' + getPrefixCls();
+
+  const salt = `${proComponentsCls}`;
+  /**
+   * 合并一下token，不然导致嵌套 token 失效
+   */
+  const proLayoutTokenMerge = useMemo(() => {
+    return getLayoutDesignToken(propsToken || {}, tokenContext.token);
+  }, [propsToken, tokenContext.token]);
+
+  const proProvideValue = useMemo(() => {
+    return {
+      ...proProvide,
+      dark: dark ?? proProvide.dark,
+      token: shallowMergeOneLevel(proProvide.token, tokenContext.token, {
+        proComponentsCls,
+        antCls,
+        themeId: tokenContext.theme.id,
+        layout: proLayoutTokenMerge,
+      }),
+      intl: resolveIntl(intl, proProvide.intl, locale?.locale),
+    };
+  }, [
+    locale?.locale,
+    proProvide,
+    dark,
+    tokenContext.token,
+    tokenContext.theme.id,
+    proComponentsCls,
+    antCls,
+    proLayoutTokenMerge,
+    intl,
+  ]);
+
+  const finalToken = {
+    ...(proProvideValue.token || {}),
+    proComponentsCls,
+  };
+
+  const [token, nativeHashId] = useCacheToken<ProAliasToken>(
+    tokenContext.theme as unknown as Theme<any, any>,
+    [tokenContext.token, finalToken ?? {}],
+    {
+      salt,
+      override: finalToken,
+      cssVar: {
+        key: 'pro',
+      },
+    },
+  );
+
+  const hashed = useMemo(
+    () =>
+      resolveProConfigHashed(
+        props.hashed,
+        proProvide.hashed,
+        tokenContext.hashId,
+      ),
+    [proProvide.hashed, props.hashed, tokenContext.hashId],
+  );
+
+  const hashId = useMemo(() => {
+    if (props.hashed === false) {
+      return '';
+    }
+    if (proProvide.hashed === false) return '';
+    if (!hashed) {
+      return '';
+    } else if (tokenContext.hashId !== undefined) {
+      return tokenContext.hashId;
+    } else {
+      // 生产环境或其他环境
+      return nativeHashId;
+    }
+  }, [hashed, nativeHashId, tokenContext.hashId]);
+
+  useEffect(() => {
+    dayjs.locale(locale?.locale || 'zh-cn');
+  }, [locale?.locale]);
+
+  const themeConfig = useMemo(() => {
+    return {
+      ...restConfig.theme,
+      hashId: hashId,
+      hashed,
+    };
+  }, [restConfig.theme, hashId, hashed]);
+
+  const proConfigContextValue = useMemo(() => {
+    return {
+      ...proProvideValue!,
+      valueTypeMap: valueTypeMap || proProvideValue?.valueTypeMap,
+      token: finalToken as any,
+      theme: tokenContext.theme as unknown as Theme<any, any>,
+      hashed,
+      hashId,
+      prefixCls,
+    };
+  }, [
+    proProvideValue,
+    valueTypeMap,
+    token,
+    tokenContext.theme,
+    hashed,
+    hashId,
+    prefixCls,
+  ]);
+
+  const configProviderDom = useMemo(() => {
+    return (
+      <AntdConfigProvider {...restConfig} theme={themeConfig}>
+        <ProConfigContext.Provider value={proConfigContextValue}>
+          <>
+            {autoClearCache && <CacheClean />}
+            {children}
+          </>
+        </ProConfigContext.Provider>
+      </AntdConfigProvider>
+    );
+  }, [
+    restConfig,
+    themeConfig,
+    proConfigContextValue,
+    autoClearCache,
+    children,
+  ]);
+
+  if (!autoClearCache) return configProviderDom;
+
+  return (
+    <SWRConfig value={{ provider: () => new Map() }}>
+      {configProviderDom}
+    </SWRConfig>
+  );
+};
+
+/**
+ * 用于配置 Pro 的一些全局性的东西
+ * @param props
+ * @returns
+ */
+export const ProConfigProvider: React.FC<{
+  children: React.ReactNode;
+  autoClearCache?: boolean;
+  token?: DeepPartial<ProAliasToken>;
+  needDeps?: boolean;
+  valueTypeMap?: Record<string, ProRenderFieldPropsType>;
+  dark?: boolean;
+  hashed?: boolean;
+  prefixCls?: string;
+  intl?: IntlType;
+}> = (props) => {
+  const { needDeps, dark, token } = props;
+  const proProvide = useContext(ProConfigContext);
+  const { locale, theme, ...rest } = useContext(
+    AntdConfigProvider.ConfigContext,
+  );
+
+  // 当开启 needDeps 且外层已存在有效的 ProProvider 时，当前层不必再套一次 Provider。
+  // 只有在"仅传了 children 和 needDeps（其他所有可配置项都没传）"时才允许透传，
+  // 防止外层错过 token/intl/dark/prefixCls 等显式配置。
+  const PASSTHROUGH_ALLOWED_KEYS: readonly (keyof typeof props)[] = [
+    'children',
+    'needDeps',
+  ];
+  const passedKeys = Object.keys(props) as (keyof typeof props)[];
+  const isNullProvide =
+    needDeps &&
+    proProvide.hashId !== undefined &&
+    passedKeys.every((k) => PASSTHROUGH_ALLOWED_KEYS.includes(k));
+
+  if (isNullProvide) return <>{props.children}</>;
+
+  const mergeAlgorithm = () => {
+    const isDark = dark ?? proProvide.dark;
+
+    if (isDark) {
+      return [theme?.algorithm, antdTheme.darkAlgorithm]
+        .flat(1)
+        .filter(Boolean);
+    }
+    // dark 被显式传为 false 时，必须返回一个非 undefined 的 algorithm
+    // 来覆盖先前可能已注入的 darkAlgorithm；
+    // 如果不显式设置，omitUndefined 会丢弃 algorithm 键，
+    // 导致 AntdConfigProvider 不重置主题。
+    if (dark === false) {
+      return theme?.algorithm ?? antdTheme.defaultAlgorithm;
+    }
+    return theme?.algorithm;
+  };
+  // 自动注入 antd 的配置
+  const configProvider = {
+    ...rest,
+    locale: locale || zh_CN,
+    theme: omitUndefined({
+      ...theme,
+      algorithm: mergeAlgorithm(),
+    }),
+  } as typeof theme;
+
+  return (
+    <AntdConfigProvider {...configProvider}>
+      <ConfigProviderContainer {...props} token={token} />
+    </AntdConfigProvider>
+  );
+};
+
+/**
+ * It returns the intl object from the context if it exists, otherwise it returns the intl object for
+ * 获取国际化的方法
+ * the current locale
+ * @returns The return value of the function is the intl object.
+ */
+export function useIntl(): IntlType {
+  const { locale } = useContext(AntdConfigProvider.ConfigContext);
+  const { intl } = useContext(ProConfigContext);
+
+  if (intl && intl.locale !== 'default') {
+    return intl;
+  }
+
+  if (locale?.locale) {
+    return (
+      intlMap[findIntlKeyByAntdLocaleKey(locale.locale) as 'zh-CN'] || zhCNIntl
+    );
+  }
+
+  return zhCNIntl;
+}
+
+ProConfigContext.displayName = 'ProProvider';
+
+export const ProProvider = ProConfigContext;
+
+export default ProConfigContext;

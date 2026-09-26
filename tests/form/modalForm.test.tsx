@@ -1,38 +1,222 @@
-﻿import React from 'react';
-import { ProFormText, ModalForm } from '@ant-design/pro-form';
-import { Button } from 'antd';
-import { act } from 'react-dom/test-utils';
-import { mount } from 'enzyme';
-import { waitForComponentToPaint } from '../util';
+﻿import type { ProFormInstance } from '@ant-design/pro-components';
+import { ModalForm, ProForm, ProFormText } from '@ant-design/pro-components';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from '@testing-library/react';
+import type { FormInstance } from 'antd';
+import { Button, Form, Modal } from 'antd';
+import { createRef, useState } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { waitForWaitTime } from '../util';
+
+afterEach(() => {
+  cleanup();
+  // 清理所有定时器
+  vi.clearAllTimers();
+  // 清理所有模拟
+  vi.clearAllMocks();
+});
 
 describe('ModalForm', () => {
-  it('📦 trigger will simulate onVisibleChange', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 trigger will simulate onOpenChange', async () => {
+    const fn = vi.fn();
+    const wrapper = render(
       <ModalForm
         width={600}
         trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
+        onOpenChange={(open) => fn(open)}
       >
         <ProFormText name="name" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    act(() => {
-      wrapper.find('button#new').simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
-    await waitForComponentToPaint(wrapper);
-    expect(fn).toBeCalledWith(true);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(true);
+    });
+
+    await act(async () => {
+      const cancelButton = wrapper.getByText('取 消');
+      fireEvent.click(cancelButton);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(false);
+    });
+
+    // 确保组件完全卸载
+    wrapper.unmount();
+    await waitForWaitTime(100);
   });
 
-  it('📦 ModalForm first no render items', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 ModelForm get formRef when use request', async () => {
+    const formRef = createRef<FormInstance>();
+    const wrapper = render(
+      <ModalForm
+        open
+        formRef={formRef}
+        request={async (params) => {
+          return params;
+        }}
+        params={{
+          name: 'test',
+        }}
+      >
+        <ProFormText label="名称" name="name" />
+      </ModalForm>,
+    );
+
+    await waitFor(() => {
+      expect(wrapper.getByText('名称')).toBeTruthy();
+    });
+
+    expect(formRef.current?.getFieldValue('name')).toBe('test');
+    wrapper.unmount();
+  });
+
+  it('📦 submitter config no reset default config', async () => {
+    const fn = vi.fn();
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        submitter={{
+          searchConfig: {
+            submitText: '确认',
+            resetText: '取消',
+          },
+          resetButtonProps: {
+            style: {
+              width: '80px',
+            },
+            id: 'reset',
+          },
+        }}
+        trigger={<Button id="new">新建</Button>}
+        onOpenChange={(open) => fn(open)}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(true);
+    });
+
+    await act(async () => {
+      const cancelButton = wrapper.getByText('取 消');
+      fireEvent.click(cancelButton);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(false);
+    });
+  });
+
+  it('📦 form onFinish return true should close modal', async () => {
+    const wrapper = render(
       <ModalForm
         width={600}
         trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
+        onFinish={async () => {
+          return true;
+        }}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await act(async () => {
+      const submitButton = wrapper.getByText('确 认');
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      // 检查 Modal 是否被关闭，通过检查 .ant-modal-root 是否还存在
+      const modalRoot = wrapper.container.querySelector('.ant-modal-root');
+      expect(modalRoot).toBeFalsy();
+    });
+  });
+
+  it('📦 form onFinish is null, no close modal', async () => {
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        trigger={<Button id="new">新建</Button>}
+        onFinish={async () => {
+          return false;
+        }}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await act(async () => {
+      const submitButton = wrapper.getByText('确 认');
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      // Modal 应该保持打开状态，检查按钮文本是否存在
+      expect(wrapper.getByText('确 认')).toBeTruthy();
+    });
+  });
+
+  it('📦 ModalForm support submitter is false', async () => {
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        submitter={false}
+        trigger={<Button id="new">新建</Button>}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await waitFor(() => {
+      // 不应该有提交按钮
+      expect(wrapper.queryByText('确 认')).toBeFalsy();
+      expect(wrapper.queryByText('取 消')).toBeFalsy();
+    });
+  });
+
+  it('📦 ModalForm first no render items', async () => {
+    const fn = vi.fn();
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        trigger={<Button id="new">新建</Button>}
+        initialValues={{
+          name: '1234',
+        }}
+        onOpenChange={(open) => fn(open)}
       >
         <ProFormText
           name="name"
@@ -42,26 +226,33 @@ describe('ModalForm', () => {
         />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    expect(wrapper.find('input#test').exists()).toBeFalsy();
+    // 初始状态下不应该渲染表单内容
+    expect(wrapper.queryByDisplayValue('1234')).toBeFalsy();
 
-    act(() => {
-      wrapper.find('button#new').simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
-    await waitForComponentToPaint(wrapper);
-    expect(wrapper.find('input#test').exists()).toBeTruthy();
+
+    await waitFor(() => {
+      expect(wrapper.getByDisplayValue('1234')).toBeTruthy();
+    });
   });
 
   it('📦 ModalForm first render items', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <ModalForm
         width={600}
         modalProps={{
           forceRender: true,
         }}
-        onVisibleChange={(visible) => fn(visible)}
+        initialValues={{
+          name: '1234',
+        }}
+        open
+        onOpenChange={(open) => fn(open)}
       >
         <ProFormText
           name="name"
@@ -71,169 +262,497 @@ describe('ModalForm', () => {
         />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    expect(wrapper.find('input#test').exists()).toBeTruthy();
+    await waitFor(() => {
+      expect(wrapper.getByDisplayValue('1234')).toBeTruthy();
+    });
   });
 
-  it('📦 ModalForm destroyOnClose', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 ModalForm destroyOnHidden', async () => {
+    const wrapper = render(
       <ModalForm
         width={600}
-        modalProps={{ destroyOnClose: true }}
-        onVisibleChange={(visible) => fn(visible)}
+        modalProps={{ destroyOnHidden: true }}
+        trigger={<Button id="new">新建</Button>}
       >
-        <ProFormText
-          name="name"
-          fieldProps={{
-            id: 'test',
-          }}
-        />
+        <ProFormText name="test" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    expect(wrapper.find('input#test').exists()).toBeFalsy();
-
-    act(() => {
-      wrapper.setProps({
-        visible: true,
-      });
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
-    await waitForComponentToPaint(wrapper);
 
-    expect(wrapper.find('input#test').exists()).toBeTruthy();
-
-    act(() => {
-      wrapper.setProps({
-        visible: false,
-      });
+    await act(async () => {
+      // 只选 className 包含 ant-input 的 input
+      const inputs = wrapper
+        .getAllByDisplayValue('')
+        .filter((el) => el.className.includes('ant-input'));
+      fireEvent.change(inputs[0], { target: { value: '1234' } });
     });
-    await waitForComponentToPaint(wrapper);
 
-    expect(wrapper.find('input#test').exists()).toBeFalsy();
+    await act(async () => {
+      const cancelButton = wrapper.getByText('取 消');
+      fireEvent.click(cancelButton);
+    });
+
+    await waitFor(() => {
+      // 检查 Modal 是否被关闭
+      const modalRoot = wrapper.container.querySelector('.ant-modal-root');
+      expect(modalRoot).toBeFalsy();
+    });
+
+    // 再次打开 Modal
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await waitFor(() => {
+      // 检查输入框是否被重置
+      const inputs = wrapper
+        .getAllByDisplayValue('')
+        .filter((el) => el.className.includes('ant-input'));
+
+      expect(inputs.length).toBe(0);
+    });
   });
 
-  it('📦 modal close button will simulate onVisibleChange', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 modal close button will simulate onOpenChange', async () => {
+    const fn = vi.fn();
+    const wrapper = render(
       <ModalForm
-        visible
+        width={600}
         trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
+        onOpenChange={(open) => fn(open)}
       >
         <ProFormText name="name" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    act(() => {
-      wrapper.find('button.ant-modal-close').simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
-    await waitForComponentToPaint(wrapper);
-    expect(fn).toBeCalledWith(false);
+
+    await act(async () => {
+      const cancelButton = wrapper.getByText('取 消');
+      fireEvent.click(cancelButton);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(false);
+    });
   });
 
-  it('📦 modal visible=true simulate onVisibleChange', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 modal open=true simulate onOpenChange', async () => {
+    const fn = vi.fn();
+    render(
+      <ModalForm width={600} open onOpenChange={(open) => fn(open)}>
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(true);
+    });
+  });
+
+  it('📦 reset button will simulate onOpenChange', async () => {
+    const fn = vi.fn();
+    const wrapper = render(
       <ModalForm
-        visible
+        width={600}
         trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
+        onOpenChange={(open) => fn(open)}
       >
         <ProFormText name="name" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    expect(fn).toBeCalledWith(true);
-  });
-
-  it('📦 reset button will simulate onVisibleChange', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
-      <ModalForm
-        visible
-        trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
-      >
-        <ProFormText name="name" />
-      </ModalForm>,
-    );
-    await waitForComponentToPaint(wrapper);
-
-    act(() => {
-      wrapper.find('.ant-modal-footer button.ant-btn').at(0).simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
-    expect(fn).toBeCalledWith(false);
+
+    await act(async () => {
+      const cancelButton = wrapper.getByText('取 消');
+      fireEvent.click(cancelButton);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(false);
+    });
   });
 
   it('📦 modal close button will simulate modalProps.onCancel', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <ModalForm
-        visible
+        width={600}
+        trigger={<Button id="new">新建</Button>}
         modalProps={{
           onCancel: () => fn(false),
         }}
-        trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
       >
         <ProFormText name="name" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    act(() => {
-      wrapper.find('button.ant-modal-close').simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
-    await waitForComponentToPaint(wrapper);
-    expect(fn).toBeCalledWith(false);
+
+    await act(async () => {
+      const cancelButton = wrapper.getByText('取 消');
+      fireEvent.click(cancelButton);
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(false);
+    });
   });
 
-  it('📦 form onFinish return true should close modal', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 ModalForm close no rerender from', async () => {
+    const wrapper = render(
       <ModalForm
-        visible
+        width={600}
         trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
-        onFinish={async () => true}
+        onFinish={async () => {
+          return true;
+        }}
       >
         <ProFormText name="name" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    act(() => {
-      wrapper.find('button.ant-btn-primary').simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
 
-    await waitForComponentToPaint(wrapper);
+    await act(async () => {
+      const submitButton = wrapper.getByText('确 认');
+      fireEvent.click(submitButton);
+    });
 
-    expect(fn).toBeCalledWith(false);
+    await waitFor(() => {
+      // 检查 Modal 是否被关闭
+      const modalRoot = wrapper.container.querySelector('.ant-modal-root');
+      expect(modalRoot).toBeFalsy();
+    });
+
+    // 再次打开 Modal
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await waitFor(() => {
+      // Modal 应该重新打开，检查按钮文本是否存在
+      expect(wrapper.getByText('确 认')).toBeTruthy();
+    });
   });
 
-  it('📦 form onFinish is null, no close modal', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+  it('📦 ModalForm destroyOnHidden close will rerender from', async () => {
+    const wrapper = render(
       <ModalForm
-        visible
+        width={600}
+        modalProps={{ destroyOnHidden: true }}
         trigger={<Button id="new">新建</Button>}
-        onVisibleChange={(visible) => fn(visible)}
+        onFinish={async () => {
+          return true;
+        }}
       >
         <ProFormText name="name" />
       </ModalForm>,
     );
-    await waitForComponentToPaint(wrapper);
 
-    act(() => {
-      wrapper.find('button.ant-btn-primary').simulate('click');
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
     });
 
-    await waitForComponentToPaint(wrapper);
-    expect(fn).toBeCalledTimes(1);
+    await act(async () => {
+      const submitButton = wrapper.getByText('确 认');
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      // 检查 Modal 是否被关闭
+      const modalRoot = wrapper.container.querySelector('.ant-modal-root');
+      expect(modalRoot).toBeFalsy();
+    });
+
+    // 再次打开 Modal
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await waitFor(() => {
+      // Modal 应该重新打开，检查按钮文本是否存在
+      expect(wrapper.getByText('确 认')).toBeTruthy();
+    });
+  });
+
+  it('📦 DrawerForm submitTimeout is number will disabled close button when submit', async () => {
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        submitTimeout={2000}
+        trigger={<Button id="new">新建</Button>}
+        onFinish={async () => {
+          await waitForWaitTime(1000);
+          return true;
+        }}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await act(async () => {
+      const submitButton = wrapper.getByText('确 认');
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      // 检查提交按钮是否有 loading 状态
+      const submitButton = wrapper.getByText('确 认').closest('button');
+      expect(submitButton).toHaveClass('ant-btn-loading');
+    });
+  });
+
+  it('📦 modal submitTimeout is null no disable close button when submit', async () => {
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        trigger={<Button id="new">新建</Button>}
+        onFinish={async () => {
+          await waitForWaitTime(100);
+          return true;
+        }}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await act(async () => {
+      const submitButton = wrapper.getByText('确 认');
+      fireEvent.click(submitButton);
+    });
+
+    await waitFor(() => {
+      // 提交按钮不应该被禁用
+      const submitButton = wrapper.container.querySelector(
+        'button[type="button"]',
+      );
+      expect(submitButton).not.toBeDisabled();
+    });
+  });
+
+  it('📦 model no render Form when destroyOnHidden', async () => {
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        modalProps={{ destroyOnHidden: true }}
+        trigger={<Button id="new">新建</Button>}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    // 初始状态下不应该渲染表单内容
+    expect(wrapper.queryByText('确 认')).toBeFalsy();
+  });
+
+  it('📦 ModelForm get formRef when destroyOnHidden', async () => {
+    const formRef = createRef<FormInstance>();
+    const html = render(
+      <ModalForm
+        width={600}
+        formRef={formRef}
+        modalProps={{ destroyOnHidden: true }}
+        trigger={<Button id="new">新建</Button>}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = html.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    await waitFor(() => {
+      expect(formRef.current).toBeTruthy();
+    });
+  });
+
+  it('📦 external form shows the latest record after destroyOnHidden', async () => {
+    const records = {
+      A: { id: 'A', name: 'name-of-A', remark: 'only-A' },
+      B: { id: 'B', name: 'name-of-B' },
+    };
+
+    const Demo = () => {
+      const [form] = Form.useForm();
+      const [recordId, setRecordId] = useState<'A' | 'B'>('A');
+      const [open, setOpen] = useState(false);
+
+      const openRecord = (id: 'A' | 'B') => {
+        setRecordId(id);
+        setOpen(true);
+      };
+
+      return (
+        <>
+          <Button onClick={() => openRecord('A')}>edit A</Button>
+          <Button onClick={() => openRecord('B')}>edit B</Button>
+          <ModalForm
+            form={form}
+            modalProps={{
+              destroyOnHidden: true,
+              maskTransitionName: '',
+              transitionName: '',
+            }}
+            open={open}
+            params={{ id: recordId }}
+            request={async ({ id }) => records[id as 'A' | 'B']}
+            submitter={false}
+            onOpenChange={setOpen}
+          >
+            <ProFormText name="id" />
+            <ProFormText name="name" />
+            <ProFormText name="remark" />
+          </ModalForm>
+        </>
+      );
+    };
+
+    const wrapper = render(<Demo />);
+
+    fireEvent.click(wrapper.getByText('edit A'));
+    await waitFor(() => {
+      expect(wrapper.getByDisplayValue('name-of-A')).toBeInTheDocument();
+    });
+
+    fireEvent.click(document.querySelector('button.ant-modal-close')!);
+    await waitFor(() => {
+      expect(wrapper.queryByDisplayValue('name-of-A')).toBeNull();
+    });
+
+    fireEvent.click(wrapper.getByText('edit B'));
+    await waitFor(() => {
+      expect(wrapper.getByDisplayValue('name-of-B')).toBeInTheDocument();
+      expect(wrapper.queryByDisplayValue('name-of-A')).toBeNull();
+      expect(document.querySelector('input[id$="_remark"]')).toHaveValue('');
+    });
+  });
+
+  it('📦 getFieldsFormatValue uses the recreated form instance', async () => {
+    type Item = { id: string; name: string };
+    const formRef = createRef<ProFormInstance<Item>>();
+
+    const Demo = () => {
+      const [item, setItem] = useState<Item>();
+
+      return (
+        <>
+          <Button onClick={() => setItem({ id: 'A', name: 'name-of-A' })}>
+            open A
+          </Button>
+          <Button onClick={() => setItem({ id: 'B', name: 'name-of-B' })}>
+            open B
+          </Button>
+          <Modal
+            destroyOnHidden
+            footer={null}
+            maskTransitionName=""
+            open={!!item}
+            onCancel={() => setItem(undefined)}
+            transitionName=""
+          >
+            <ProForm<Item>
+              formRef={formRef}
+              submitter={false}
+              request={async () => item!}
+            >
+              <ProFormText name="id" />
+              <ProFormText name="name" />
+            </ProForm>
+          </Modal>
+        </>
+      );
+    };
+
+    const wrapper = render(<Demo />);
+
+    fireEvent.click(wrapper.getByText('open A'));
+    await waitFor(() => {
+      expect(formRef.current?.getFieldsFormatValue?.()).toEqual({
+        id: 'A',
+        name: 'name-of-A',
+      });
+    });
+
+    fireEvent.click(document.querySelector('button.ant-modal-close')!);
+    await waitFor(() => {
+      expect(wrapper.queryByDisplayValue('name-of-A')).toBeNull();
+    });
+
+    fireEvent.click(wrapper.getByText('open B'));
+    await waitFor(() => {
+      expect(formRef.current?.getFieldsFormatValue?.()).toEqual({
+        id: 'B',
+        name: 'name-of-B',
+      });
+    });
+  });
+
+  it('📦 ModalForm close during request loading with destroyOnHidden should not throw', async () => {
+    const wrapper = render(
+      <ModalForm
+        width={600}
+        modalProps={{ destroyOnHidden: true }}
+        request={async () => {
+          // Simulate slow request
+          return new Promise((resolve) =>
+            setTimeout(() => resolve({ name: 'demo' }), 200),
+          );
+        }}
+        trigger={<Button id="new">新建</Button>}
+      >
+        <ProFormText name="name" />
+      </ModalForm>,
+    );
+
+    await act(async () => {
+      const triggerButton = wrapper.getByText('新 建');
+      fireEvent.click(triggerButton);
+    });
+
+    // Close before request resolves (cancel button may not render while loading), click close icon
+    await act(async () => {
+      const closeButton = document.querySelector('button.ant-modal-close');
+      if (closeButton) {
+        fireEvent.click(closeButton);
+      }
+    });
+
+    // Wait a bit for async to flush
+    await waitForWaitTime(300);
   });
 });

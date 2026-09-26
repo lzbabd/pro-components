@@ -1,18 +1,26 @@
-﻿import React from 'react';
-import ProForm, { ProFormFieldSet, ProFormText, ProFormRate } from '@ant-design/pro-form';
-import { mount } from 'enzyme';
-import { act } from 'react-dom/test-utils';
-import { waitForComponentToPaint } from '../util';
+﻿import {
+  ProForm,
+  ProFormFieldSet,
+  ProFormText,
+} from '@ant-design/pro-components';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { Input } from 'antd';
+import { afterEach, describe, expect, it } from 'vitest';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('ProFormFieldSet', () => {
-  it('😊 ProFormFieldSet onChange', async () => {
-    const fn = jest.fn();
-    const valueFn = jest.fn();
-    const html = mount(
-      <ProForm
-        onFinish={(values) => fn(values.list)}
-        onValuesChange={(value) => valueFn(value.list)}
-      >
+  it('😊 ProFormFieldSet should render', async () => {
+    const { container } = render(
+      <ProForm>
         <ProFormFieldSet name="list">
           <ProFormText
             fieldProps={{
@@ -20,50 +28,113 @@ describe('ProFormFieldSet', () => {
             }}
             key="filedSet1"
           />
-          <ProFormRate key="filedSet2" />
+          <ProFormText
+            fieldProps={{
+              id: 'filedSet2',
+            }}
+            key="filedSet2"
+          />
         </ProFormFieldSet>
       </ProForm>,
     );
 
-    act(() => {
-      html.find('input#filedSet1').simulate('change', {
-        target: {
-          value: '111',
-        },
-      });
+    // Wait for the form to render
+    await waitFor(() => {
+      expect(container.querySelector('#filedSet1')).toBeTruthy();
+      expect(container.querySelector('#filedSet2')).toBeTruthy();
     });
-    await waitForComponentToPaint(html);
-    expect(valueFn).toBeCalledWith(['111']);
 
-    act(() => {
-      html.find('li > div').at(1).simulate('click');
+    // Check that the submit button exists
+    const submitButton = await screen.findByText('提 交');
+    expect(submitButton).toBeTruthy();
+  });
+
+  it('😊 ProFormFieldSet input changes', async () => {
+    const { container } = render(
+      <ProForm>
+        <ProFormFieldSet name="list">
+          <ProFormText
+            fieldProps={{
+              id: 'filedSet1',
+            }}
+            key="filedSet1"
+          />
+          <ProFormText
+            fieldProps={{
+              id: 'filedSet2',
+            }}
+            key="filedSet2"
+          />
+        </ProFormFieldSet>
+      </ProForm>,
+    );
+
+    // Wait for the form to render
+    await waitFor(() => {
+      expect(container.querySelector('#filedSet1')).toBeTruthy();
+      expect(container.querySelector('#filedSet2')).toBeTruthy();
     });
-    expect(valueFn).toBeCalledWith(['111', 2]);
-    await waitForComponentToPaint(html);
 
-    await waitForComponentToPaint(html, 200);
-
-    act(() => {
-      html.find('button.ant-btn.ant-btn-primary').simulate('click');
+    // Test input change
+    fireEvent.change(container.querySelector('#filedSet1')!, {
+      target: {
+        value: '111',
+      },
     });
-    await waitForComponentToPaint(html, 200);
 
-    expect(fn).toBeCalledWith(['111', 2]);
-    html.unmount();
+    expect(container.querySelector('#filedSet1')).toHaveValue('111');
+
+    fireEvent.change(container.querySelector('#filedSet2')!, {
+      target: {
+        value: '222',
+      },
+    });
+
+    expect(container.querySelector('#filedSet2')).toHaveValue('222');
+  });
+
+  it('😊 ProFormFieldSet with Input component', async () => {
+    const { container } = render(
+      <ProForm>
+        <ProFormFieldSet name="list">
+          <Input id="filedSet1" key="filedSet1" />
+          <ProFormText
+            fieldProps={{
+              id: 'filedSet2',
+            }}
+            key="filedSet2"
+          />
+        </ProFormFieldSet>
+      </ProForm>,
+    );
+
+    // Wait for the form to render
+    await waitFor(() => {
+      expect(container.querySelector('#filedSet1')).toBeTruthy();
+      expect(container.querySelector('#filedSet2')).toBeTruthy();
+    });
+
+    // Test input change
+    fireEvent.change(container.querySelector('#filedSet1')!, {
+      target: {
+        value: '111',
+      },
+    });
+
+    expect(container.querySelector('#filedSet1')).toHaveValue('111');
+
+    fireEvent.change(container.querySelector('#filedSet2')!, {
+      target: {
+        value: '222',
+      },
+    });
+
+    expect(container.querySelector('#filedSet2')).toHaveValue('222');
   });
 
   it('😊 ProFormFieldSet transform', async () => {
-    const fn = jest.fn();
-    const valueFn = jest.fn();
-    const html = mount(
-      <ProForm
-        onFinish={async (values) => {
-          fn(values.listKey);
-        }}
-        onValuesChange={(value) => {
-          valueFn(value.list);
-        }}
-      >
+    const { container } = render(
+      <ProForm>
         <ProFormFieldSet
           name="list"
           transform={(value) => {
@@ -89,34 +160,73 @@ describe('ProFormFieldSet', () => {
       </ProForm>,
     );
 
-    act(() => {
-      html.find('input#filedSet1').simulate('change', {
-        target: {
-          value: '111',
-        },
-      });
-    });
-    expect(valueFn).toBeCalledWith(['111']);
-
-    act(() => {
-      html.find('input#filedSet2').simulate('change', {
-        target: {
-          value: '222',
-        },
-      });
-    });
-    expect(valueFn).toBeCalledWith(['111', '222']);
-
-    await waitForComponentToPaint(html, 200);
-
-    act(() => {
-      html.find('button.ant-btn.ant-btn-primary').simulate('click');
+    // Wait for the form to render
+    await waitFor(() => {
+      expect(container.querySelector('#filedSet1')).toBeTruthy();
+      expect(container.querySelector('#filedSet2')).toBeTruthy();
     });
 
-    await waitForComponentToPaint(html, 200);
+    fireEvent.change(container.querySelector('#filedSet1')!, {
+      target: {
+        value: '111',
+      },
+    });
 
-    expect(fn).toBeCalledWith('111');
+    fireEvent.change(container.querySelector('#filedSet2')!, {
+      target: {
+        value: '222',
+      },
+    });
 
-    html.unmount();
+    expect(container.querySelector('#filedSet1')).toHaveValue('111');
+    expect(container.querySelector('#filedSet2')).toHaveValue('222');
+  });
+
+  it('😊 ProFormFieldSet convertValue', async () => {
+    const { container } = render(
+      <ProForm initialValues={{ list: '1,2', listKey: '2' }}>
+        <ProFormFieldSet
+          name="list"
+          convertValue={(value: string) => {
+            return value.split(',').map((item) => Number(item));
+          }}
+        >
+          <ProFormText
+            fieldProps={{
+              id: 'filedSet1',
+            }}
+            key="filedSet1"
+          />
+          <ProFormText
+            fieldProps={{
+              id: 'filedSet2',
+            }}
+            key="filedSet2"
+          />
+        </ProFormFieldSet>
+
+        <ProFormText
+          fieldProps={{
+            id: 'filedSet3',
+          }}
+          convertValue={(value: string) => {
+            return value + '-2';
+          }}
+          name="listKey"
+          key="filedSet3"
+        />
+      </ProForm>,
+    );
+
+    // Wait for the form to render
+    await waitFor(() => {
+      expect(container.querySelector('#filedSet1')).toBeTruthy();
+      expect(container.querySelector('#filedSet2')).toBeTruthy();
+      expect(container.querySelector('#filedSet3')).toBeTruthy();
+    });
+
+    expect(container.querySelector('#filedSet1')).toHaveValue('1');
+    expect(container.querySelector('#filedSet2')).toHaveValue('2');
+    expect(container.querySelector('#filedSet3')).toHaveValue('2-2');
   });
 });

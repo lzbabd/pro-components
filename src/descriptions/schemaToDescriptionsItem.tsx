@@ -1,0 +1,130 @@
+﻿import { EditOutlined } from '@ant-design/icons';
+import { Space } from 'antd';
+import type { DescriptionsItemType } from 'antd/es/descriptions';
+import React from 'react';
+import type { ProCoreActionType, UseEditableMapUtilType } from '../utils';
+import { LabelIconTip, genCopyable } from '../utils';
+import { FieldRender } from './FieldRender';
+import { getDataFromConfig } from './getDataFromConfig';
+import { resolveDescriptionsValueType } from './resolveValueType';
+import type { ProDescriptionsColumn } from './typing';
+
+export function schemaToDescriptionsItem(
+  items: ProDescriptionsColumn<any, any>[],
+  entity: Record<string, unknown> | undefined,
+  action: ProCoreActionType<any>,
+  editableUtils?: UseEditableMapUtilType,
+  emptyText?: React.ReactNode,
+) {
+  const options: React.JSX.Element[] = [];
+  const children = items
+    ?.map?.((item, index) => {
+      const row = entity ?? {};
+      const {
+        valueEnum: _valueEnum,
+        render: _render,
+        renderText,
+        mode,
+        plain: _plain,
+        dataIndex,
+        request: _request,
+        params: _params,
+        editable,
+        ...restItem
+      } = item as ProDescriptionsColumn;
+
+      const defaultData = getDataFromConfig(item, entity) ?? restItem.children;
+
+      const text = renderText
+        ? renderText(defaultData, row, index, action)
+        : defaultData;
+
+      const title =
+        typeof restItem.title === 'function'
+          ? restItem.title(item, 'descriptions', null)
+          : restItem.title;
+
+      const valueType = resolveDescriptionsValueType(item, row);
+
+      const isEditable = editableUtils?.isEditable(
+        (dataIndex as React.Key) || index,
+      );
+
+      const fieldMode =
+        mode != null ? mode : isEditable ? 'edit' : 'read';
+
+      const showEditIcon =
+        editableUtils &&
+        fieldMode === 'read' &&
+        editable !== false &&
+        editable?.(text, row, index) !== false;
+
+      const Component = showEditIcon ? Space : React.Fragment;
+
+      const key = restItem.key || restItem.label?.toString() || index;
+      const label = (title || restItem.label || restItem.tooltip) && (
+        <LabelIconTip
+          label={title || restItem.label}
+          tooltip={restItem.tooltip}
+          ellipsis={item.ellipsis}
+        />
+      );
+      const fieldDom = (
+        <FieldRender
+          {...item}
+          key={item?.key}
+          dataIndex={item.dataIndex || index}
+          mode={fieldMode}
+          text={text}
+          valueType={valueType}
+          entity={row}
+          index={index}
+          emptyText={valueType === 'option' ? undefined : emptyText}
+          action={action}
+          editableUtils={editableUtils}
+        />
+      );
+      const renderedField =
+        fieldMode === 'edit'
+          ? fieldDom
+          : genCopyable(fieldDom, item, text, defaultData);
+      const field: DescriptionsItemType | React.JSX.Element =
+        valueType !== 'option'
+          ? ({
+              ...restItem,
+              key,
+              label,
+              children: (
+                <Component>
+                  {renderedField}
+                  {showEditIcon && (
+                    <EditOutlined
+                      onClick={() => {
+                        editableUtils?.startEditable(
+                          (dataIndex as React.Key) || index,
+                        );
+                      }}
+                    />
+                  )}
+                </Component>
+              ),
+            } as DescriptionsItemType)
+          : ((
+              <React.Fragment key={key}>
+                <Component>
+                  {renderedField}
+                </Component>
+              </React.Fragment>
+            ) as React.JSX.Element);
+      if (valueType === 'option') {
+        options.push(field as React.JSX.Element);
+        return null;
+      }
+      return field;
+    })
+    .filter((item) => item);
+  return {
+    options: options?.length ? options : null,
+    children,
+  };
+}

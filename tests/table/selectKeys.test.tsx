@@ -1,16 +1,22 @@
-import { mount } from 'enzyme';
-import React from 'react';
-import { act } from 'react-dom/test-utils';
-import ProTable from '@ant-design/pro-table';
-import { getFetchData } from './demo';
-import { waitForComponentToPaint } from '../util';
+import { ProTable } from '@ant-design/pro-components';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import React, { act, useEffect, useState } from 'react';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { waitForWaitTime } from '../util';
+import { getFetchData } from './fixtures';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('BasicTable Search', () => {
   const LINE_STR_COUNT = 20;
   // Mock offsetHeight
   // @ts-expect-error
-  const originOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
-    .get;
+  const originOffsetHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'offsetHeight',
+  ).get;
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     get() {
       let html = this.innerHTML;
@@ -24,7 +30,6 @@ describe('BasicTable Search', () => {
   const originGetComputedStyle = window.getComputedStyle;
   window.getComputedStyle = (ele) => {
     const style = originGetComputedStyle(ele);
-    style.lineHeight = '16px';
     return style;
   };
 
@@ -36,8 +41,8 @@ describe('BasicTable Search', () => {
   });
 
   it('🎏 filter test', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -66,18 +71,84 @@ describe('BasicTable Search', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 200);
+    await waitForWaitTime(200);
     act(() => {
-      html
-        .find('.ant-table-cell label.ant-checkbox-wrapper input')
-        .at(1)
-        .simulate('change', {
-          target: {
-            checked: true,
-          },
-        });
+      html.baseElement
+        .querySelectorAll<HTMLInputElement>(
+          '.ant-table-cell label.ant-checkbox-wrapper input',
+        )[1]
+        ?.click();
     });
-    await waitForComponentToPaint(html, 200);
-    expect(fn).toBeCalledTimes(1);
+    await waitForWaitTime(200);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('✔️ selected rows support row is function', async () => {
+    const fn = vi.fn();
+    const DemoTable = () => {
+      const columns = [
+        {
+          title: '名字',
+          dataIndex: 'name',
+        },
+        {
+          title: '年龄',
+          dataIndex: 'age',
+        },
+        {
+          title: '编号',
+          dataIndex: 'id',
+        },
+      ];
+      const dataSource = [
+        {
+          name: '张三',
+          age: 18,
+          id: '001',
+        },
+        {
+          name: '李四',
+          age: 19,
+          id: '002',
+        },
+      ];
+      // ProTable 在 useEffect 里写入 preserveRecordsRef；若首帧就用 useState 传入
+      // selectedRowKeys，selectedRows 会从尚未填充的 Map 取值得到 undefined。
+      // 子组件 effect 先于父组件执行，延后在此设置选中 key，确保二次渲染时能解析出行数据。
+      const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+      useEffect(() => {
+        setSelectedRowKeys(['001', '002']);
+      }, []);
+      return (
+        <ProTable
+          columns={columns}
+          dataSource={dataSource}
+          rowKey={(record) => record.id}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (newSelectedRowKeys) => {
+              setSelectedRowKeys(newSelectedRowKeys);
+            },
+          }}
+          tableAlertOptionRender={false}
+          tableAlertRender={({ selectedRows }) => {
+            const text = selectedRows
+              .filter((row): row is NonNullable<(typeof selectedRows)[number]> => row != null)
+              .map((row) => row.name)
+              .join(',');
+            if (text) {
+              fn(text);
+            }
+            return <div>{text}</div>;
+          }}
+        />
+      );
+    };
+
+    render(<DemoTable />);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith('张三,李四');
+    });
   });
 });

@@ -1,0 +1,148 @@
+﻿import React, { useContext, useMemo } from 'react';
+import { PureProField } from '../../../field';
+import type { ProSchema } from '../../../utils';
+import { runFunction, useRefFunction } from '../../../utils';
+import type { ProFieldValueTypeInput } from '../../../utils';
+import { EditOrReadOnlyContext } from '../../BaseForm/EditOrReadOnlyContext';
+import type { ProFormFieldItemProps } from '../../typing';
+import warpField from '../FormItem/warpField';
+
+export type ProFormFieldProps<
+  T = any,
+  FiledProps = Record<string, any>,
+> = ProSchema<
+  T,
+  ProFormFieldItemProps<FiledProps> & {
+    mode?: 'edit' | 'read' | 'update';
+    // 用来判断是不是被嵌套渲染的 dom
+    isDefaultDom?: boolean;
+    ref?: any;
+    text?: any;
+    getFieldProps?: () => Record<string, any>;
+    getFormItemProps?: () => Record<string, any>;
+    /**
+     * dependencies value
+     */
+    dependenciesValues?: Record<string, any>;
+    originDependencies?: Record<string, any>;
+  },
+  any,
+  any
+>;
+
+const BaseProFormField = React.forwardRef<
+  any,
+  ProFormFieldProps & {
+    onChange?: (...args: any) => any;
+    autoFocus?: boolean;
+  }
+>((props, forwardedRef) => {
+  const {
+    fieldProps,
+    children,
+    labelCol,
+    label,
+    autoFocus,
+    isDefaultDom,
+    render,
+    proFieldProps,
+    formItemRender,
+    valueType,
+    initialValue,
+    onChange,
+    valueEnum,
+    params,
+    name,
+    dependenciesValues,
+    cacheForSwr = false,
+    valuePropName = 'value',
+    ...restProps
+  } = props;
+
+  const modeContext = useContext(EditOrReadOnlyContext);
+  const fieldMode =
+    proFieldProps?.mode ??
+    (proFieldProps?.readonly === false ? 'edit' : modeContext.mode) ??
+    'edit';
+
+  const propsParams = useMemo(() => {
+    // 使用dependencies时 dependenciesValues是有值的
+    // 此时如果存在request，注入dependenciesValues
+    return dependenciesValues && restProps.request
+      ? {
+          ...params,
+          ...(dependenciesValues || {}),
+        }
+      : params;
+  }, [dependenciesValues, params, restProps.request]);
+
+  const memoUnChange = useRefFunction((...restParams: any) => {
+    if (fieldProps?.onChange) {
+      (fieldProps?.onChange as any)?.(...restParams);
+      return;
+    }
+  });
+
+  const memoFieldProps = useMemo(
+    () => ({
+      autoFocus,
+      ...fieldProps,
+      onChange: memoUnChange,
+    }),
+    [autoFocus, fieldProps, memoUnChange],
+  );
+
+  const childrenRender = useMemo(() => {
+    // 防止 formItem 的值被吃掉
+    if (children) {
+      if (React.isValidElement(children)) {
+        return React.cloneElement(children, {
+          ...restProps,
+          onChange: (...restParams: any) => {
+            if (fieldProps?.onChange) {
+              (fieldProps?.onChange as any)?.(...restParams);
+              return;
+            }
+            onChange?.(...restParams);
+          },
+          ...((children?.props as any) || {}),
+        });
+      }
+      return <>{children}</>;
+    }
+    return;
+  }, [children, fieldProps?.onChange, onChange, restProps]);
+
+  if (childrenRender) {
+    return childrenRender;
+  }
+
+  return (
+    <PureProField
+      ref={forwardedRef}
+      text={fieldProps?.[valuePropName]}
+      render={render as any}
+      formItemRender={formItemRender as any}
+      // #9002 保持 valueType 为 undefined 透传（缺省标记），不要在此处补 'text'：
+      // ProFieldCore 依据「是否显式传入」决定 valueEnum → select 的智能推断
+      valueType={valueType as ProFieldValueTypeInput}
+      cacheForSwr={cacheForSwr}
+      fieldProps={memoFieldProps}
+      valueEnum={runFunction(valueEnum)}
+      {...proFieldProps}
+      {...restProps}
+      mode={fieldMode}
+      params={propsParams}
+    />
+  );
+});
+BaseProFormField.displayName = 'ProFormComponent';
+
+const ProFormField = warpField<ProFormFieldProps>?.(BaseProFormField) as <
+  FiledProps,
+  DataType = Record<string, any>,
+>(
+  props: ProFormFieldProps<DataType, FiledProps>,
+) => React.ReactElement;
+
+export default ProFormField;

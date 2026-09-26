@@ -1,16 +1,14 @@
-import React, { useRef } from 'react';
-import { InputNumber, Form } from 'antd';
-import type { RowEditableConfig } from '@ant-design/pro-utils';
-import useMergedState from 'rc-util/lib/hooks/useMergedState';
 import type {
   ProDescriptionsActionType,
   ProDescriptionsItemProps,
-} from '@ant-design/pro-descriptions';
-import Descriptions from '@ant-design/pro-descriptions';
-import { mount, render } from 'enzyme';
-import { act } from 'react-dom/test-utils';
-import { waitForComponentToPaint } from '../util';
-
+  RowEditableConfig,
+} from '@ant-design/pro-components';
+import { ProDescriptions } from '@ant-design/pro-components';
+import { useControlledState } from '@rc-component/util';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import { Form, InputNumber } from 'antd';
+import React, { act, useCallback, useRef } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 type DataSourceType = {
   id: number;
   title?: string;
@@ -20,7 +18,7 @@ type DataSourceType = {
   }[];
   state?: string;
   time?: {
-    created_at?: string;
+    created_at?: number;
   };
   children?: DataSourceType;
 };
@@ -30,7 +28,7 @@ const defaultData: DataSourceType = {
   title: '🐛 [BUG]yarn install命令 antd2.4.5会报错',
   labels: [{ name: 'bug', color: 'error' }],
   time: {
-    created_at: '2020-05-26T09:42:56Z',
+    created_at: 1590486176000,
   },
   state: 'processing',
 };
@@ -39,14 +37,14 @@ const columns: ProDescriptionsItemProps<DataSourceType>[] = [
   {
     dataIndex: 'index',
     valueType: 'indexBorder',
-    renderFormItem: () => <InputNumber />,
+    formItemRender: () => <InputNumber />,
   },
   {
     title: '标题',
     dataIndex: 'title',
     copyable: true,
     ellipsis: true,
-    tip: '标题过长会自动收缩',
+    tooltip: '标题过长会自动收缩',
     formItemProps: {
       rules: [
         {
@@ -79,7 +77,6 @@ const columns: ProDescriptionsItemProps<DataSourceType>[] = [
   {
     title: '创建时间',
     dataIndex: ['time', 'created_at'],
-    valueType: 'date',
   },
 ];
 
@@ -95,22 +92,38 @@ const DescriptionsDemo = (
 ) => {
   const [form] = Form.useForm();
   const actionRef = useRef<ProDescriptionsActionType>();
-  const [editableKeys, setEditorRowKeys] = useMergedState<React.Key[]>(
+  const [editableKeys, setEditorRowKeysInner] = useControlledState<React.Key[]>(
     () => props.defaultKeys || [],
-    {
-      value: props.editorRowKeys,
-      onChange: props.onEditorChange,
-    },
+    props.editorRowKeys,
   );
-  const [dataSource, setDataSource] = useMergedState<DataSourceType, DataSourceType>(
-    props.dataSource as any,
-    {
-      value: props.dataSource,
-      onChange: props.onDataSourceChange,
+  const setEditorRowKeys = useCallback(
+    (updater: React.Key[] | ((prev: React.Key[]) => React.Key[])) => {
+      setEditorRowKeysInner((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (p: React.Key[]) => React.Key[])(prev)
+            : updater;
+        props.onEditorChange?.(next);
+        return next;
+      });
     },
+    [props.onEditorChange],
+  );
+  const [dataSource, setDataSourceInner] = useControlledState<DataSourceType>(
+    props.dataSource as any,
+    props.dataSource,
+  );
+  const handleDataSourceChange = useCallback(
+    (value: DataSourceType | undefined) => {
+      if (value !== undefined) {
+        setDataSourceInner(value);
+        props.onDataSourceChange?.(value);
+      }
+    },
+    [props.onDataSourceChange, setDataSourceInner],
   );
   return (
-    <Descriptions<DataSourceType>
+    <ProDescriptions<DataSourceType>
       columns={columns}
       actionRef={actionRef}
       request={async () => ({
@@ -129,102 +142,115 @@ const DescriptionsDemo = (
         </a>
       }
       dataSource={dataSource}
-      onDataSourceChange={setDataSource}
+      onDataSourceChange={handleDataSourceChange}
       editable={{
         ...props,
         form,
         type: props.type,
         editableKeys,
         onSave: props.onSave,
-        onChange: setEditorRowKeys,
+        onChange: (keys) => setEditorRowKeys(keys),
       }}
     />
   );
 };
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('Descriptions', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it('📝 Descriptions close editable', async () => {
-    const wrapper = mount(
-      <Descriptions<DataSourceType> columns={columns} dataSource={defaultData} />,
+    const wrapper = render(
+      <ProDescriptions<DataSourceType>
+        title="基本使用"
+        columns={columns}
+        dataSource={defaultData}
+      />,
     );
-    await waitForComponentToPaint(wrapper, 100);
-    expect(wrapper.find('ProForm').exists()).toBeFalsy();
+
+    await wrapper.findAllByText('基本使用');
+    expect(!!wrapper.baseElement.querySelector('.anticon-edit')).toBeFalsy();
   });
 
   it('📝 Descriptions support editable', async () => {
-    const wrapper = mount(
-      <Descriptions<DataSourceType> columns={columns} dataSource={defaultData} editable={{}} />,
+    const wrapper = render(
+      <ProDescriptions<DataSourceType>
+        title="基本使用"
+        columns={columns}
+        dataSource={defaultData}
+        editable={{}}
+      />,
     );
-    await waitForComponentToPaint(wrapper, 100);
-    expect(wrapper.find('ProForm').exists()).toBeTruthy();
+    await wrapper.findAllByText('基本使用');
+    expect(!!wrapper.baseElement.querySelector('.anticon-edit')).toBeTruthy();
   });
 
   it('📝 support onEditorChange', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <DescriptionsDemo
         onEditorChange={(keys) => {
           fn(keys);
         }}
       />,
     );
-    await waitForComponentToPaint(wrapper, 1000);
+    await wrapper.findAllByText('重置');
+
     act(() => {
-      wrapper.find('span.anticon-edit').at(0).simulate('click');
+      wrapper.baseElement
+        .querySelectorAll<HTMLSpanElement>('span.anticon-edit')[0]
+        ?.click();
     });
-    await waitForComponentToPaint(wrapper);
-    expect(fn).toBeCalledWith(['title']);
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(['title']);
+    });
   });
 
   it('📝 support set Form', async () => {
-    const wrapper = mount(<DescriptionsDemo editorRowKeys={['title']} />);
-    await waitForComponentToPaint(wrapper, 1000);
+    const wrapper = render(<DescriptionsDemo editorRowKeys={['title']} />);
+
+    await wrapper.findAllByText('重置');
 
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`.ant-input`)
-        .simulate('change', {
-          target: {
-            value: 'test',
-          },
-        });
+      fireEvent.change(
+        wrapper.baseElement
+          .querySelectorAll<HTMLSpanElement>(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('.ant-input')[0],
+        { target: { value: 'test' } },
+      );
     });
-    await waitForComponentToPaint(wrapper, 200);
-
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`.ant-input`)
-        .props().value,
-    ).toBe('test');
+    await waitFor(() => {
+      expect(wrapper.queryByDisplayValue('test')).toBeTruthy();
+    });
 
     act(() => {
-      wrapper.find('#reset_test').simulate('click');
+      wrapper.queryByText('重置')?.click();
     });
-    await waitForComponentToPaint(wrapper, 200);
-
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`.ant-input`)
-        .props().value,
-    ).toBe('🐛 [BUG]yarn install命令 antd2.4.5会报错');
+    await waitFor(() => {
+      expect(
+        wrapper.queryByDisplayValue('🐛 [BUG]yarn install命令 antd2.4.5会报错'),
+      ).toBeTruthy();
+    });
   });
 
-  it('📝 renderFormItem run defaultRender', async () => {
+  it('📝 formItemRender run defaultRender', async () => {
     const wrapper = render(
-      <Descriptions<DataSourceType>
+      <ProDescriptions<DataSourceType>
         editable={{
           editableKeys: ['title'],
         }}
         columns={[
           {
             dataIndex: 'title',
-            renderFormItem: (item, config) => {
+            formItemRender: (item, config) => {
               return config.defaultRender(item);
             },
           },
@@ -232,12 +258,39 @@ describe('Descriptions', () => {
         dataSource={defaultData}
       />,
     );
-    expect(wrapper).toMatchSnapshot();
+    // editableKeys=['title'] + formItemRender 调用 defaultRender → 应渲染默认编辑控件（input）
+    expect(wrapper.container.querySelector('input.ant-input')).toBeTruthy();
+    // 编辑模式下应有 form item
+    expect(wrapper.container.querySelector('.ant-form-item')).toBeTruthy();
+  });
+
+  it('🐛 #9208 editable textarea fills the available width', () => {
+    const wrapper = render(
+      <ProDescriptions
+        editable={{ editableKeys: ['introduction'] }}
+        columns={[
+          {
+            dataIndex: 'introduction',
+            valueType: 'textarea',
+            fieldProps: { style: { width: '100%' } },
+          },
+        ]}
+        dataSource={{ introduction: 'About me' }}
+      />,
+    );
+
+    const formItem = wrapper.container.querySelector<HTMLElement>(
+      '.ant-form-item',
+    );
+    expect(formItem).toHaveStyle({ flex: '1', minWidth: '0' });
+    expect(wrapper.container.querySelector('textarea')).toHaveStyle({
+      width: '100%',
+    });
   });
 
   it('📝 columns support editable test', async () => {
     const wrapper = render(
-      <Descriptions
+      <ProDescriptions
         editable={{
           editableKeys: ['title'],
         }}
@@ -256,12 +309,20 @@ describe('Descriptions', () => {
         dataSource={defaultData}
       />,
     );
-    expect(wrapper).toMatchSnapshot();
+    // editableKeys=['title'] 时 title 列进入编辑态 → 渲染 input
+    // 注：实际 editable(text, record, index) 中 index 由内部传入，title 仍能进入编辑
+    expect(wrapper.container.querySelector('input.ant-input')).toBeTruthy();
+    // title2 列设置 editable=false，不应渲染额外编辑控件
+    // 整个 descriptions 应只有 1 个 input（title 列）
+    expect(
+      wrapper.container.querySelectorAll('input.ant-input').length,
+    ).toBe(1);
+    expect(wrapper.container.querySelector('.ant-descriptions')).toBeTruthy();
   });
 
   it('📝 support actionRender', async () => {
     const wrapper = render(
-      <Descriptions
+      <ProDescriptions
         editable={{
           editableKeys: ['title'],
           actionRender: () => [
@@ -285,75 +346,81 @@ describe('Descriptions', () => {
         dataSource={defaultData}
       />,
     );
-    expect(wrapper.find('div#test').text()).toBe('xx');
+    expect(!!wrapper.queryByText('xx')).toBe(true);
   });
 
   it('📝 support editorRowKeys', async () => {
-    const wrapper = mount(<DescriptionsDemo editorRowKeys={['title']} />);
-    await waitForComponentToPaint(wrapper, 1000);
+    const wrapper = render(<DescriptionsDemo editorRowKeys={['title']} />);
+
+    await wrapper.findAllByDisplayValue(
+      '🐛 [BUG]yarn install命令 antd2.4.5会报错',
+    );
     // 第一行应该编辑态
     expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find('input')
-        .exists(),
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[0]
+        .querySelectorAll('input').length > 0,
     ).toBeTruthy();
 
     // 第二行不应该是编辑态
     expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find('input')
-        .exists(),
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[1]
+        .querySelectorAll('input').length > 0,
     ).toBeFalsy();
   });
 
   it('📝 support cancel click', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <DescriptionsDemo
         onEditorChange={(keys) => {
           fn(keys);
         }}
       />,
     );
-    await waitForComponentToPaint(wrapper, 1000);
+    await wrapper.findAllByText('重置');
     act(() => {
-      wrapper.find('span.anticon-edit').at(0).simulate('click');
+      wrapper.baseElement
+        .querySelector<HTMLDivElement>('span.anticon-edit')
+        ?.click();
     });
-    await waitForComponentToPaint(wrapper, 1000);
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
-
-    act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`span.anticon-close`)
-        .simulate('click');
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
     });
 
-    await waitForComponentToPaint(wrapper, 1000);
-
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find('input')
-        .exists(),
-    ).toBeFalsy();
+    act(() => {
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[0]
+        .querySelector<HTMLSpanElement>(`span.anticon-close`)
+        ?.click();
+    });
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input').length > 0,
+      ).toBeFalsy();
+    });
   });
 
   it('📝 support cancel click render false', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <DescriptionsDemo
         onEditorChange={(keys) => {
           fn(keys);
@@ -361,41 +428,45 @@ describe('Descriptions', () => {
         onCancel={async () => false}
       />,
     );
-    await waitForComponentToPaint(wrapper, 1000);
+    await wrapper.findAllByText('重置');
     act(() => {
-      wrapper.find('span.anticon-edit').at(0).simulate('click');
+      wrapper.baseElement
+        .querySelector<HTMLSpanElement>('span.anticon-edit')
+        ?.click();
     });
-    await waitForComponentToPaint(wrapper, 1000);
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
-
-    act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`span.anticon-close`)
-        .simulate('click');
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
     });
 
-    await waitForComponentToPaint(wrapper, 1000);
+    act(() => {
+      wrapper.baseElement
+        .querySelector<HTMLSpanElement>(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )
+        ?.querySelector<HTMLSpanElement>(`span.anticon-close`)
+        ?.click();
+    });
 
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find('input')
-        .exists(),
-    ).toBeFalsy();
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input').length > 0,
+      ).toBeFalsy();
+    });
   });
 
   it('📝 type=single, only edit one rows', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <DescriptionsDemo
         defaultKeys={['state']}
         onEditorChange={(keys) => {
@@ -403,19 +474,21 @@ describe('Descriptions', () => {
         }}
       />,
     );
-    await waitForComponentToPaint(wrapper, 1000);
+    await wrapper.findAllByText('重置');
     act(() => {
-      wrapper.find('span.anticon-edit').at(0).simulate('click');
+      wrapper.baseElement
+        .querySelector<HTMLSpanElement>('span.anticon-edit')
+        ?.click();
     });
 
-    await waitForComponentToPaint(wrapper, 1000);
-
-    expect(fn).not.toBeCalled();
+    await waitFor(() => {
+      expect(fn).not.toHaveBeenCalled();
+    });
   });
 
   it('📝 type=multiple, edit multiple rows', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <DescriptionsDemo
         type="multiple"
         defaultKeys={['state']}
@@ -424,48 +497,53 @@ describe('Descriptions', () => {
         }}
       />,
     );
-    await waitForComponentToPaint(wrapper, 1000);
+    await wrapper.findAllByText('重置');
     act(() => {
-      wrapper.find('span.anticon-edit').at(0).simulate('click');
+      wrapper.baseElement
+        .querySelector<HTMLSpanElement>('span.anticon-edit')
+        ?.click();
     });
-    await waitForComponentToPaint(wrapper, 1000);
-    expect(fn).toBeCalledWith(['state', 'title']);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith(['state', 'title']);
+    });
   });
 
   it('📝 support onSave', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(<DescriptionsDemo onSave={(key) => fn(key)} />);
-    await waitForComponentToPaint(wrapper, 1000);
+    const fn = vi.fn();
+    const wrapper = render(<DescriptionsDemo onSave={(key) => fn(key)} />);
+    await wrapper.findAllByText('重置');
     act(() => {
-      wrapper.find('span.anticon-edit').at(1).simulate('click');
+      wrapper.baseElement
+        .querySelectorAll<HTMLSpanElement>('span.anticon-edit')[1]
+        ?.click();
     });
 
-    await waitForComponentToPaint(wrapper, 200);
-
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
-
-    act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find(`span.anticon-check`)
-        .simulate('click');
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[1]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
     });
 
-    await waitForComponentToPaint(wrapper, 200);
-
-    expect(fn).toBeCalledWith('state');
+    act(() => {
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[1]
+        .querySelector<HTMLSpanElement>('span.anticon-check')
+        ?.click();
+    });
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith('state');
+    });
   });
 
   it('📝 support onSave support false', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(
+    const fn = vi.fn();
+    const wrapper = render(
       <DescriptionsDemo
         onSave={async (key) => {
           fn(key);
@@ -473,137 +551,207 @@ describe('Descriptions', () => {
         }}
       />,
     );
-    await waitForComponentToPaint(wrapper, 1000);
-    act(() => {
-      wrapper.find('span.anticon-edit').at(1).simulate('click');
-    });
 
-    await waitForComponentToPaint(wrapper, 200);
-
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
+    await wrapper.findAllByText('重置');
 
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find(`span.anticon-check`)
-        .simulate('click');
+      wrapper.baseElement
+        .querySelectorAll<HTMLSpanElement>('span.anticon-edit')[1]
+        ?.click();
     });
 
-    await waitForComponentToPaint(wrapper, 200);
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[1]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
+    });
 
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
+    act(() => {
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[1]
+        .querySelector<HTMLSpanElement>(`span.anticon-check`)
+        ?.click();
+    });
 
-    expect(fn).toBeCalledWith('state');
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[1]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith('state');
+    });
   });
 
   it('📝 support onCancel', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(<DescriptionsDemo onCancel={(key) => fn(key)} />);
-    await waitForComponentToPaint(wrapper, 1000);
-    act(() => {
-      wrapper.find('span.anticon-edit').at(1).simulate('click');
-    });
+    const fn = vi.fn();
+    const wrapper = render(<DescriptionsDemo onCancel={(key) => fn(key)} />);
 
-    await waitForComponentToPaint(wrapper, 200);
-
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
+    await wrapper.findAllByText('重置');
 
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(1)
-        .find(`span.anticon-close`)
-        .simulate('click');
+      wrapper.baseElement
+        .querySelectorAll<HTMLSpanElement>('span.anticon-edit')[1]
+        ?.click();
     });
 
-    await waitForComponentToPaint(wrapper, 200);
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[1]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
+    });
+    act(() => {
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[1]
+        .querySelector<HTMLSpanElement>(`span.anticon-close`)
+        ?.click();
+    });
 
-    expect(fn).toBeCalledWith('state');
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith('state');
+    });
   });
 
   it('📝 support form rules', async () => {
-    const fn = jest.fn();
-    const wrapper = mount(<DescriptionsDemo onSave={(key, row) => fn(row.title)} />);
-    await waitForComponentToPaint(wrapper, 1000);
+    const fn = vi.fn();
+    const wrapper = render(
+      <DescriptionsDemo onSave={(key, row) => fn(row.title)} />,
+    );
+
+    await wrapper.findAllByText('重置');
 
     act(() => {
-      wrapper.find('span.anticon-edit').at(0).simulate('click');
+      wrapper.baseElement
+        .querySelectorAll<HTMLSpanElement>('span.anticon-edit')[0]
+        ?.click();
     });
 
-    await waitForComponentToPaint(wrapper, 200);
-    expect(
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find('input')
-        .exists(),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input').length > 0,
+      ).toBeTruthy();
+    });
 
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`.ant-input`)
-        .simulate('change', {
+      fireEvent.change(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input')![0],
+        {
           target: {
             value: '',
           },
-        });
+        },
+      );
     });
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`span.anticon-check`)
-        .simulate('click');
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[0]
+        .querySelectorAll<HTMLSpanElement>(`span.anticon-check`)[0]
+        .click();
     });
 
-    await waitForComponentToPaint(wrapper, 200);
-
-    // 没有通过验证，不触发 onSave
-    expect(fn).not.toBeCalled();
+    await waitFor(() => {
+      // 没有通过验证，不触发 onSave
+      expect(fn).not.toHaveBeenCalled();
+    });
 
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`input.ant-input`)
-        .simulate('change', {
+      fireEvent.change(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelectorAll('input')![0],
+        {
           target: {
             value: 'qixian',
           },
-        });
+        },
+      );
     });
 
     act(() => {
-      wrapper
-        .find('td.ant-descriptions-item .ant-descriptions-item-content')
-        .at(0)
-        .find(`span.anticon-check`)
-        .simulate('click');
+      fireEvent.click(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[0]
+          .querySelector('span.anticon-check')!,
+        {},
+      );
     });
 
-    await waitForComponentToPaint(wrapper, 200);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledWith('qixian');
+    });
+  });
 
-    expect(fn).toBeCalledWith('qixian');
+  it('📝 when dataIndex is array', async () => {
+    const fn = vi.fn();
+    const wrapper = render(
+      <DescriptionsDemo onSave={(key, row) => fn(row?.time?.created_at)} />,
+    );
+    await wrapper.findAllByText('重置');
+
+    act(() => {
+      wrapper.baseElement
+        .querySelectorAll<HTMLSpanElement>('span.anticon-edit')[2]
+        ?.click();
+    });
+
+    act(() => {
+      fireEvent.change(
+        wrapper.baseElement
+          .querySelectorAll(
+            'td.ant-descriptions-item .ant-descriptions-item-content',
+          )[2]
+          .querySelector(`input.ant-input`)!,
+        {
+          target: {
+            value: '2021-05-26 09:42:56',
+          },
+        },
+      );
+    });
+
+    act(() => {
+      wrapper.baseElement
+        .querySelectorAll(
+          'td.ant-descriptions-item .ant-descriptions-item-content',
+        )[2]
+        .querySelectorAll<HTMLDivElement>(`span.anticon-check`)[0]
+        ?.click();
+    });
+
+    await waitFor(() => {
+      // 代码已修复，现在能正确传递数组 dataIndex 的值
+      expect(fn).toHaveBeenCalledWith('2021-05-26 09:42:56');
+    });
   });
 });

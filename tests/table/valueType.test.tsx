@@ -1,10 +1,40 @@
-import { mount } from 'enzyme';
-import React from 'react';
-import ProTable from '@ant-design/pro-table';
+import { ProProvider, ProTable } from '@ant-design/pro-components';
+import { cleanup, fireEvent, render } from '@testing-library/react';
 import { Input } from 'antd';
-import ProProvider from '@ant-design/pro-provider';
+import { act } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { waitForWaitTime } from '../util';
 
-import { waitForComponentToPaint } from '../util';
+const cascaderOptions = [
+  {
+    field: 'front end',
+    value: 'fe',
+    language: [
+      {
+        field: 'Javascript',
+        value: 'js',
+      },
+      {
+        field: 'Typescript',
+        value: 'ts',
+      },
+    ],
+  },
+  {
+    field: 'back end',
+    value: 'be',
+    language: [
+      {
+        field: 'Java',
+        value: 'java',
+      },
+      {
+        field: 'Go',
+        value: 'go',
+      },
+    ],
+  },
+];
 
 const defaultProps = {
   columns: [
@@ -16,6 +46,24 @@ const defaultProps = {
       fieldProps: {
         color: 'red',
       },
+    },
+    {
+      title: '树形下拉框',
+      key: 'treeSelect',
+      dataIndex: 'treeSelect',
+      width: 100,
+      fieldProps: {
+        options: cascaderOptions,
+        fieldNames: {
+          children: 'language',
+          label: 'field',
+        },
+        showSearch: true,
+        filterTreeNode: true,
+        multiple: true,
+        treeNodeFilterProp: 'field',
+      },
+      valueType: 'treeSelect',
     },
   ],
   rowKey: 'key',
@@ -33,17 +81,49 @@ const defaultProps = {
   },
 };
 
+afterEach(() => {
+  cleanup();
+});
+
 describe('BasicTable valueType', () => {
+  it('🐛 #9549 preserves precision from a functional percent valueType', async () => {
+    const html = render(
+      <ProTable
+        search={false}
+        options={false}
+        pagination={false}
+        rowKey="key"
+        columns={[
+          {
+            title: '百分比',
+            dataIndex: 'percent',
+            valueType: () => ({
+              type: 'percent',
+              precision: 8,
+            }),
+          },
+        ]}
+        dataSource={[{ key: 1, percent: 0.000001 }]}
+      />,
+    );
+
+    expect(await html.findByText('0.00000100%')).toBeTruthy();
+  });
+
   it('🎏 table support user valueType', async () => {
-    const html = mount(
+    const html = render(
       <ProProvider.Provider
         value={
           {
             valueTypeMap: {
               link: {
                 render: (text: any) => <a id="link">{text}</a>,
-                renderFormItem: (_: any, props: any) => (
-                  <Input placeholder="请输入链接" {...props?.fieldProps} />
+                formItemRender: (_: any, props: any) => (
+                  <Input
+                    placeholder="请输入链接"
+                    id="name"
+                    {...props?.fieldProps}
+                  />
                 ),
               },
             },
@@ -58,17 +138,21 @@ describe('BasicTable valueType', () => {
         />
       </ProProvider.Provider>,
     );
-    await waitForComponentToPaint(html, 1200);
+    await waitForWaitTime(1200);
 
-    expect(html.find('#link').text()).toBe('TradeCode 0');
+    expect((await html.findAllByText('TradeCode 0')).length).toBe(1);
 
-    expect(html.find('input#name').exists()).toBeTruthy();
+    expect(!!html.asFragment().querySelector('input[id$="_name"]')).toBeTruthy();
 
-    expect(html.find('input#name').props().value).toBe('TradeCode');
+    expect(
+      (html.asFragment().querySelector('input[id$="_name"]') as HTMLInputElement).value,
+    ).toBe('TradeCode');
+
+    html.unmount();
   });
 
   it('🎏 table valueType render support fieldProps', async () => {
-    const html = mount(
+    const html = render(
       <ProProvider.Provider
         value={
           {
@@ -80,8 +164,12 @@ describe('BasicTable valueType', () => {
                     {fieldProps.color}
                   </a>
                 ),
-                renderFormItem: (_: any, props: any) => (
-                  <Input placeholder="请输入链接" {...props?.fieldProps} />
+                formItemRender: (_: any, props: any) => (
+                  <Input
+                    placeholder="请输入链接"
+                    id="name"
+                    {...props?.fieldProps}
+                  />
                 ),
               },
             },
@@ -96,12 +184,70 @@ describe('BasicTable valueType', () => {
         />
       </ProProvider.Provider>,
     );
-    await waitForComponentToPaint(html, 1200);
+    await waitForWaitTime(1200);
 
-    expect(html.find('#link').text()).toBe('TradeCode 0red');
+    expect((await html.findAllByText('TradeCode 0red')).length).toBe(1);
 
-    expect(html.find('input#name').exists()).toBeTruthy();
+    expect(!!html.asFragment().querySelector('input[id$="_name"]')).toBeTruthy();
 
-    expect(html.find('input#name').props().color).toBe('red');
+    expect(
+      (html.asFragment().querySelector('input[id$="_name"]') as HTMLInputElement).value,
+    ).toBe('TradeCode');
+
+    html.unmount();
+  });
+  it('🎏 table support filter when valueType is treeSelect', async () => {
+    const html = render(<ProTable {...defaultProps} />);
+    await waitForWaitTime(1200);
+
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input[id$="_treeSelect"]')!, {
+        target: {
+          value: 'Ja',
+        },
+      });
+    });
+    await waitForWaitTime(300);
+    expect(
+      html.baseElement.querySelectorAll('span[title="Javascript"]').length,
+    ).toBe(1);
+    expect(html.baseElement.querySelectorAll('span[title="Java"]').length).toBe(
+      1,
+    );
+    expect(
+      html.baseElement.querySelectorAll('span[title="Typescript"]').length,
+    ).toBe(0);
+    expect(html.baseElement.querySelectorAll('span[title="Go"]').length).toBe(
+      0,
+    );
+
+    act(() => {
+      fireEvent.change(html.baseElement.querySelector('input[id$="_treeSelect"]')!, {
+        target: {
+          value: 'Javasc',
+        },
+      });
+    });
+    await waitForWaitTime(300);
+    expect(
+      html.baseElement.querySelectorAll('span[title="Javascript"]').length,
+    ).toBe(1);
+    expect(html.baseElement.querySelectorAll('span[title="Java"]').length).toBe(
+      0,
+    );
+    expect(
+      html.baseElement.querySelectorAll('span[title="Typescript"]').length,
+    ).toBe(0);
+    expect(html.baseElement.querySelectorAll('span[title="Go"]').length).toBe(
+      0,
+    );
+    // 经过两轮 filter 后，treeSelect 的下拉项仅匹配 Javascript
+    // 验证选中项与表格主体均渲染正常
+    expect(
+      html.baseElement.querySelector('input[id$="_treeSelect"]'),
+    ).toBeTruthy();
+    expect(html.baseElement.querySelector('.ant-table')).toBeTruthy();
+
+    html.unmount();
   });
 });

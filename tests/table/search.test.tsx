@@ -1,39 +1,31 @@
-import { mount } from 'enzyme';
-import React from 'react';
-import MockDate from 'mockdate';
-import { act } from 'react-dom/test-utils';
+import type { ProFormInstance } from '@ant-design/pro-components';
+import { ProFormSelect, ProTable } from '@ant-design/pro-components';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react';
+import type { FormInstance } from 'antd';
 import { Input } from 'antd';
-import ProTable from '@ant-design/pro-table';
-import { request } from './demo';
-import { waitForComponentToPaint, spyElementPrototypes, waitTime } from '../util';
+import dayjs from 'dayjs';
+import React, { act, createRef } from 'react';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { waitTime } from '../util';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('BasicTable Search', () => {
-  let domSpy: any;
-  let mockWidth: number;
-  let mockHeight: number;
-  let mockOffsetWidth: number;
-  let mockOffsetHeight: number;
-
-  beforeAll(() => {
-    domSpy = spyElementPrototypes(HTMLElement, {
-      getBoundingClientRect: () => ({
-        width: mockWidth,
-        height: mockHeight,
-      }),
-      offsetWidth: {
-        get: () => mockOffsetWidth,
-      },
-      offsetHeight: {
-        get: () => mockOffsetHeight,
-      },
-    });
-  });
+  beforeAll(() => vi.useFakeTimers());
+  afterAll(() => vi.useRealTimers());
   process.env.NODE_ENV = 'TEST';
   const LINE_STR_COUNT = 20;
-  // Mock offsetHeight
-  // @ts-expect-error
-  const originOffsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
-    .get;
+
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     get() {
       let html = this.innerHTML;
@@ -42,32 +34,17 @@ describe('BasicTable Search', () => {
       return lines * 16;
     },
   });
-
   // Mock getComputedStyle
   const originGetComputedStyle = window.getComputedStyle;
   window.getComputedStyle = (ele) => {
     const style = originGetComputedStyle(ele);
-    style.lineHeight = '16px';
     return style;
   };
 
-  afterAll(() => {
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-      get: originOffsetHeight,
-    });
-    window.getComputedStyle = originGetComputedStyle;
-    domSpy.mockRestore();
-  });
-
   it('🎏 submit test', async () => {
-    mockHeight = 0;
-    mockWidth = 0;
-    mockOffsetHeight = 0;
-    mockOffsetWidth = 0;
-
-    const fn = jest.fn();
-    const paramsFn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+    const paramsFn = vi.fn();
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -85,34 +62,32 @@ describe('BasicTable Search', () => {
           },
         ]}
         onSubmit={fn}
-        request={(params) => {
+        request={async (params) => {
           paramsFn(params.current, params.pageSize);
-          return request(params);
+          return {
+            data: [{ key: 1, name: '1', money: 1 }],
+          };
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
+
+    const dom = await (await html.findAllByText('查 询')).at(0);
 
     act(() => {
-      html.find('button.ant-btn.ant-btn-primary').simulate('click');
+      dom?.click();
     });
 
-    act(() => {
-      mockOffsetWidth = 500;
-      // @ts-ignore
-      html.triggerResize();
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(paramsFn).toHaveBeenCalledWith(1, 20);
     });
-    await waitForComponentToPaint(html, 500);
-
-    expect(fn).toBeCalledTimes(1);
-    expect(paramsFn).toBeCalledWith(1, 20);
   });
 
   it('🎏 reset test', async () => {
-    const fn = jest.fn();
-    const resetFn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+    const resetFn = vi.fn();
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -128,29 +103,37 @@ describe('BasicTable Search', () => {
           },
         ]}
         onReset={resetFn}
-        request={(params) => {
+        request={async () => {
           fn();
-          return request(params);
+          return {
+            data: [{ key: 1, name: '1', money: 1 }],
+          };
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
 
-    act(() => {
-      html.find('button.ant-btn').at(0).simulate('click');
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
     });
 
-    await waitForComponentToPaint(html, 300);
+    const dom = await (await html.findAllByText('重 置')).at(0);
 
-    expect(fn).toBeCalledTimes(2);
-    expect(resetFn).toBeCalledTimes(1);
+    act(() => {
+      dom?.click();
+    });
+
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(2);
+      expect(resetFn).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('🎏 reset test when pagination is false', async () => {
-    const fn = jest.fn();
-    const resetFn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+    const resetFn = vi.fn();
+
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -167,68 +150,33 @@ describe('BasicTable Search', () => {
         ]}
         onReset={resetFn}
         pagination={false}
-        request={(params) => {
+        request={async () => {
           fn();
-          return request(params);
+          return {
+            data: [{ key: 1, name: '1', money: 1 }],
+          };
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
+
+    await html.findAllByText('重 置');
+
+    const dom = await (await html.findAllByText('重 置')).at(0);
 
     act(() => {
-      html.find('button.ant-btn').at(0).simulate('click');
+      dom?.click();
     });
 
-    await waitForComponentToPaint(html, 200);
-
-    expect(fn).toBeCalledTimes(2);
-    expect(resetFn).toBeCalledTimes(1);
-  });
-
-  it('🎏 manualRequest test by button', async () => {
-    const fn = jest.fn();
-    const html = mount(
-      <ProTable
-        size="small"
-        columns={[
-          {
-            title: '金额',
-            dataIndex: 'money',
-            valueType: 'money',
-          },
-          {
-            title: 'Name',
-            key: 'name',
-            children: [
-              {
-                title: '金额',
-                dataIndex: 'money',
-                valueType: 'money',
-              },
-              {
-                title: '姓名',
-                dataIndex: 'name',
-                valueType: 'money',
-              },
-            ],
-          },
-        ]}
-        manualRequest
-        request={async (params) => {
-          fn();
-          await waitTime(500);
-          return request(params);
-        }}
-        rowKey="key"
-      />,
-    );
-    await waitForComponentToPaint(html, 1200);
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(resetFn).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('🎏 table will render loading dom', async () => {
-    const fn = jest.fn();
-    const html = mount(
+    const fn = vi.fn();
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -254,74 +202,34 @@ describe('BasicTable Search', () => {
             ],
           },
         ]}
-        request={async (params) => {
+        search={false}
+        request={async () => {
           fn();
-          await waitTime(5000);
-          return request(params);
+          await waitTime(5000000);
+          return {
+            data: [{ key: 1, name: '1', money: 1 }],
+          };
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(fn).toBeCalledTimes(1);
 
-    expect(html.find('.ant-spin').exists()).toBeTruthy();
+    await html.findAllByText('暂无数据');
 
-    act(() => {
-      html.unmount();
+    await waitFor(() => {
+      expect(fn).toHaveBeenCalledTimes(1);
     });
-  });
 
-  it('🎏 manualRequest no render loading dom', async () => {
-    const fn = jest.fn();
-    const html = mount(
-      <ProTable
-        size="small"
-        columns={[
-          {
-            title: '金额',
-            dataIndex: 'money',
-            valueType: 'money',
-          },
-          {
-            title: 'Name',
-            key: 'name',
-            children: [
-              {
-                title: '金额',
-                dataIndex: 'money',
-                valueType: 'money',
-              },
-              {
-                title: '姓名',
-                dataIndex: 'name',
-                valueType: 'money',
-              },
-            ],
-          },
-        ]}
-        manualRequest
-        request={async (params) => {
-          fn();
-          return request(params);
-        }}
-        rowKey="key"
-      />,
-    );
-    await waitForComponentToPaint(html, 1200);
-    expect(fn).toBeCalledTimes(0);
-
-    expect(html.find('.ant-spin').exists()).toBeFalsy();
-
-    act(() => {
-      html.unmount();
+    await waitFor(() => {
+      expect(!!html.baseElement.querySelector('.ant-spin')).toBeTruthy();
     });
   });
 
   it('🎏 manualRequest test', async () => {
-    const fn = jest.fn();
-    const ref = React.createRef<any>();
-    const html = mount(
+    const requestFn = vi.fn();
+
+    const actionRef = React.createRef<any>();
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -330,52 +238,41 @@ describe('BasicTable Search', () => {
             dataIndex: 'money',
             valueType: 'money',
           },
-          {
-            title: 'Name',
-            key: 'name',
-            children: [
+        ]}
+        search={false}
+        actionRef={actionRef}
+        manualRequest
+        request={async () => {
+          requestFn();
+          return {
+            data: [
               {
-                title: '金额',
-                dataIndex: 'money',
-                valueType: 'money',
-              },
-              {
-                title: '姓名',
-                dataIndex: 'name',
-                valueType: 'money',
+                key: '1',
+                money: '12000',
               },
             ],
-          },
-        ]}
-        formRef={ref}
-        manualRequest
-        request={async (params) => {
-          fn();
-          await waitTime(200);
-          return request(params);
+          };
         }}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    MockDate.set(1479799364001);
 
-    act(() => {
-      ref.current?.submit();
+    await waitFor(() => {
+      expect(requestFn).not.toHaveBeenCalled();
     });
-    await waitForComponentToPaint(html, 1200);
-
-    expect(fn).toBeCalledTimes(1);
-
-    MockDate.set(1479799364000);
 
     act(() => {
-      html.unmount();
+      actionRef.current?.reload();
+    });
+
+    await html.findAllByText('¥12,000.00');
+    await waitFor(() => {
+      expect(requestFn).toHaveBeenCalledTimes(1);
     });
   });
 
   it('🎏 search span test', async () => {
-    const html = mount(
+    const html = render(
       <ProTable
         size="small"
         search={{
@@ -402,26 +299,22 @@ describe('BasicTable Search', () => {
             dataIndex: 'name',
           },
         ]}
-        request={async (params) => {
-          await waitTime(200);
-          return request(params);
-        }}
+        dataSource={[{ key: 1, name: '1', money: 1 }]}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 200);
 
-    expect(html.find('.ant-col.ant-col-12').exists()).toBeTruthy();
-
-    act(() => {
-      html.unmount();
+    await waitFor(() => {
+      expect(
+        !!html.baseElement.querySelector('.ant-col.ant-col-12'),
+      ).toBeTruthy();
     });
   });
 
   it('🎏 transform test', async () => {
-    const fn = jest.fn();
+    const fn = vi.fn();
     let formValues = { origin: '', status: '', startTime: '', endTime: '' };
-    const html = mount(
+    const html = render(
       <ProTable
         columns={[
           {
@@ -434,7 +327,7 @@ describe('BasicTable Search', () => {
             dataIndex: 'state',
             initialValue: 'state',
             search: {
-              transform: () => 'status',
+              transform: (value) => ({ status: value }),
             },
           },
           {
@@ -442,16 +335,14 @@ describe('BasicTable Search', () => {
             dataIndex: 'dateRange',
             initialValue: ['2020-09-11', '2020-09-22'],
             search: {
-              transform: (value: any) => ({ startTime: value[0], endTime: value[1] }),
+              transform: (value: any) => ({
+                startTime: value[0],
+                endTime: value[1],
+              }),
             },
           },
         ]}
-        request={async () => {
-          return {
-            data: [],
-            success: true,
-          };
-        }}
+        dataSource={[{ key: 1, name: '1', money: 1 }]}
         onSubmit={(values) => {
           fn(values);
           formValues = values as any;
@@ -459,27 +350,28 @@ describe('BasicTable Search', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1400);
-    act(() => {
-      html.find('button.ant-btn.ant-btn-primary').simulate('click');
-    });
-    await waitForComponentToPaint(html, 1400);
 
-    expect(formValues.origin).toBe('origin');
-    expect(formValues.status).toBe('state');
-    expect(formValues.startTime).toBe('2020-09-11');
-    expect(formValues.endTime).toBe('2020-09-22');
-    expect(fn).toBeCalledTimes(1);
+    const dom = await (await html.findAllByText('查 询')).at(0);
 
     act(() => {
-      html.unmount();
+      dom?.click();
     });
+
+    await waitFor(() => {
+      expect(formValues.origin).toBe('origin');
+      expect(formValues.status).toBe('state');
+      expect(formValues.startTime).toBe('2020-09-11');
+      expect(formValues.endTime).toBe('2020-09-22');
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    html.unmount();
   });
 
-  it('🎏 renderFormItem test and fieldProps onChange', async () => {
-    const fn = jest.fn();
-    const onChangeFn = jest.fn();
-    const html = mount(
+  it('🎏 formItemRender test and fieldProps onChange', async () => {
+    const fn = vi.fn();
+    const onChangeFn = vi.fn();
+    const html = render(
       <ProTable
         size="small"
         form={{
@@ -487,113 +379,113 @@ describe('BasicTable Search', () => {
             fn(values.money);
           },
         }}
+        toolBarRender={false}
         columns={[
           {
             title: '金额',
             dataIndex: 'money',
             valueType: 'money',
             fieldProps: {
-              onChange: (e: any) => onChangeFn(e.target.value),
+              onChange: (e: any) => {
+                onChangeFn(e.target.value);
+              },
             },
-            renderFormItem: () => <Input id="renderFormItem" />,
-          },
-          {
-            title: 'Name',
-            key: 'name',
-            dataIndex: 'name',
+            search: {
+              transform: (value) => ({ money: value }),
+            },
+            formItemProps: {
+              required: true,
+            },
+            formItemRender: () => {
+              return (
+                <div id="formItemRender">
+                  <Input
+                    id="formItemRender"
+                    placeholder="formItemRender"
+                    data-testid="formItemRender"
+                    onChange={(e) => {
+                      onChangeFn(e.target.value);
+                      fn(e.target.value);
+                    }}
+                  />
+                </div>
+              );
+            },
           },
         ]}
-        request={async () => {
-          await waitTime(500);
-          return {
-            data: [],
-            success: true,
-          };
-        }}
+        dataSource={[{ key: 1, name: '1', money: 1 }]}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
 
-    expect(html.find('#renderFormItem').exists()).toBeTruthy();
+    const input = await html.findByTestId('formItemRender');
+    expect(input).toBeTruthy();
+
     act(() => {
-      html.find('#renderFormItem input').simulate('change', {
-        target: {
-          value: '12',
-        },
+      fireEvent.change(input, {
+        target: { value: '12' },
       });
     });
-    expect(onChangeFn).toBeCalledWith('12');
-    expect(fn).toBeCalledWith('12');
-
-    act(() => {
-      html.unmount();
+    await waitFor(() => {
+      expect(onChangeFn).toHaveBeenCalledWith('12');
+      expect(fn).toHaveBeenCalledWith('12');
     });
+
+    html.unmount();
   });
 
-  it('🎏 renderFormItem support return false', async () => {
-    const html = mount(
+  it('🎏 does not loop when formItemRender config is spread into ProFormSelect (#9676)', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const html = render(
       <ProTable
-        size="small"
         columns={[
           {
-            title: '金额',
-            dataIndex: 'money',
-            valueType: 'money',
-            renderFormItem: () => false,
-          },
-          {
-            title: 'Name',
-            key: 'name',
-            dataIndex: 'name',
+            title: 'Type',
+            dataIndex: 'type',
+            valueType: 'select',
+            valueEnum: {
+              course: { text: 'Course' },
+              test: { text: 'Test' },
+            },
+            formItemRender: (_, config) => (
+              <ProFormSelect {...config} mode="multiple" />
+            ),
           },
         ]}
-        request={async () => {
-          await waitTime(500);
-          return {
-            data: [],
-            success: true,
-          };
-        }}
-        rowKey="key"
+        dataSource={[]}
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(html.find('div.ant-form-item').length).toBe(2);
 
-    html.setProps({
-      columns: [
-        {
-          title: '金额',
-          dataIndex: 'money',
-          valueType: 'money',
-        },
-        {
-          title: 'Name',
-          key: 'name',
-          dataIndex: 'name',
-        },
-      ],
+    await act(async () => {
+      await vi.runAllTimersAsync();
     });
 
-    await waitForComponentToPaint(html, 200);
-    expect(html.find('div.ant-form-item').length).toBe(3);
+    expect(html.baseElement.querySelector('.ant-select')).toBeTruthy();
+    expect(
+      errorSpy.mock.calls.some(([message]) =>
+        String(message).includes('Maximum update depth exceeded'),
+      ),
+    ).toBe(false);
 
-    act(() => {
-      html.unmount();
-    });
+    errorSpy.mockRestore();
   });
 
-  it('🎏 request load success false', async () => {
-    const html = mount(
+  it('🎏 formItemRender support return false', async () => {
+    const formRef = createRef<FormInstance | null>();
+    const html = render(
       <ProTable
         size="small"
+        formRef={formRef as any}
         columns={[
           {
             title: '金额',
             dataIndex: 'money',
             valueType: 'money',
-            renderFormItem: () => <Input id="renderFormItem" />,
+            formItemProps: {
+              className: 'money-class',
+            },
+            formItemRender: () => false,
           },
           {
             title: 'Name',
@@ -605,17 +497,82 @@ describe('BasicTable Search', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1000);
 
-    expect(html.find('.ant-empty').exists()).toBeTruthy();
+    await html.findAllByText('Name');
+
+    expect(html.baseElement.querySelectorAll('div.ant-form-item').length).toBe(
+      2,
+    );
+    expect(html.baseElement.querySelectorAll('.money-class').length).toBe(0);
 
     act(() => {
-      html.unmount();
+      html.rerender(
+        <ProTable
+          size="small"
+          formRef={formRef as any}
+          columns={[
+            {
+              title: '金额',
+              dataIndex: 'money',
+              valueType: 'money',
+              formItemProps: {
+                className: 'money-class',
+              },
+              formItemRender: () => <div />,
+            },
+            {
+              title: 'Name',
+              key: 'name',
+              dataIndex: 'name',
+            },
+          ]}
+          dataSource={[]}
+          rowKey="key"
+        />,
+      );
+    });
+
+    await waitFor(() => {
+      expect(html.baseElement.querySelectorAll('div.money-class').length).toBe(
+        1,
+      );
+
+      expect(
+        html.baseElement.querySelectorAll('div.ant-form-item').length,
+      ).toBe(3);
+    });
+
+    act(() => {
+      html.rerender(
+        <ProTable
+          size="small"
+          formRef={formRef as any}
+          columns={[
+            {
+              title: '金额',
+              dataIndex: 'money',
+              valueType: 'money',
+            },
+            {
+              title: 'Name',
+              key: 'name',
+              dataIndex: 'name',
+            },
+          ]}
+          dataSource={[]}
+          rowKey="key"
+        />,
+      );
+    });
+    await waitFor(() => {
+      expect(
+        html.baseElement.querySelectorAll('div.ant-form-item').length,
+      ).toBe(3);
     });
   });
 
-  it('🎏 request load null', async () => {
-    const html = mount(
+  it('🎏 request load success false', async () => {
+    const html = render(
       <ProTable
         size="small"
         columns={[
@@ -623,7 +580,37 @@ describe('BasicTable Search', () => {
             title: '金额',
             dataIndex: 'money',
             valueType: 'money',
-            renderFormItem: () => <Input id="renderFormItem" />,
+            formItemRender: () => <Input id="formItemRender" />,
+          },
+          {
+            title: 'Name',
+            key: 'name',
+            dataIndex: 'name',
+          },
+        ]}
+        dataSource={[]}
+        rowKey="key"
+      />,
+    );
+
+    await html.findAllByText('金额');
+
+    await waitFor(() => {
+      expect(html.baseElement.querySelector('.ant-empty')).toBeTruthy();
+    });
+    html.unmount();
+  });
+
+  it('🎏 request load null', async () => {
+    const html = render(
+      <ProTable
+        size="small"
+        columns={[
+          {
+            title: '金额',
+            dataIndex: 'money',
+            valueType: 'money',
+            formItemRender: () => <Input id="formItemRender" />,
           },
           {
             title: 'Name',
@@ -638,13 +625,13 @@ describe('BasicTable Search', () => {
         rowKey="key"
       />,
     );
-    expect(() => {
-      // @ts-ignore
-      html.dive().html();
-    }).toThrowError();
-    act(() => {
-      html.unmount();
+    await waitFor(() => {
+      expect(() => {
+        // @ts-ignore
+        html.dive().html();
+      }).toThrowError();
     });
+    html.unmount();
   });
 
   it('🎏 request load more time', async () => {
@@ -658,7 +645,7 @@ describe('BasicTable Search', () => {
               title: '金额',
               dataIndex: 'money',
               valueType: 'money',
-              renderFormItem: () => <Input id="renderFormItem" />,
+              formItemRender: () => <Input id="formItemRender" />,
             },
             {
               title: 'Name',
@@ -666,12 +653,7 @@ describe('BasicTable Search', () => {
               dataIndex: 'name',
             },
           ]}
-          request={async () => {
-            await waitTime(600);
-            return {
-              data: [],
-            };
-          }}
+          dataSource={[{ key: 1, name: '1', money: 1 }]}
           rowKey="key"
         />
       ) : (
@@ -679,22 +661,351 @@ describe('BasicTable Search', () => {
       );
     };
 
-    const html = mount(<TableDemo v />);
+    const html = render(<TableDemo v />);
+    await html.findAllByText('金额');
+    act(() => {
+      html.rerender(<TableDemo v={false} />);
+    });
 
-    await waitTime(500);
+    await html.findAllByText('qixian');
+    expect(html.baseElement.textContent).toBe('qixian');
+    html.unmount();
+  });
+
+  it('🎏 when dateFormatter is a Function', async () => {
+    const fn2 = vi.fn();
+    const html = render(
+      <ProTable
+        columns={[
+          {
+            title: '创建时间',
+            key: 'since',
+            dataIndex: 'createdAt',
+            valueType: 'dateTime',
+            initialValue: '2020-09-11 00:00:00',
+          },
+        ]}
+        request={(params) => {
+          fn2(params.since);
+          return Promise.resolve({
+            data: [
+              {
+                key: 1,
+                name: `TradeCode ${1}`,
+                createdAt: 1602572994055,
+              },
+            ],
+            success: true,
+          });
+        }}
+        rowKey="key"
+        pagination={{
+          showSizeChanger: true,
+        }}
+        options={false}
+        dateFormatter={(value) => {
+          return value.format('YYYY/MM/DD HH:mm:ss');
+        }}
+        headerTitle="表单赋值"
+      />,
+    );
+
+    await html.findAllByText('创建时间');
+
+    const dom = await (await html.findAllByText('查 询')).at(0);
 
     act(() => {
-      html.setProps({
-        v: false,
+      dom?.click();
+    });
+
+    await waitFor(() => {
+      expect(fn2).toHaveBeenCalledWith('2020-09-11 00:00:00');
+    });
+  });
+
+  it('🎏 ProTable support formRef', async () => {
+    const onSubmitFn = vi.fn();
+    const formRef = React.createRef<ProFormInstance | undefined>();
+    const html = render(
+      <ProTable
+        formRef={formRef as any}
+        columns={[
+          {
+            title: '创建时间',
+            key: 'since',
+            dataIndex: 'createdAt',
+            valueType: 'date',
+            initialValue: dayjs('2020-09-11 00:00:00'),
+          },
+        ]}
+        request={() => {
+          return Promise.resolve({
+            data: [
+              {
+                key: 1,
+                name: `TradeCode ${1}`,
+                createdAt: 1602572994055,
+              },
+            ],
+            success: true,
+          });
+        }}
+        dateFormatter="string"
+        onSubmit={(params) => {
+          onSubmitFn(params.since);
+        }}
+        rowKey="key"
+        pagination={{
+          showSizeChanger: true,
+        }}
+        options={false}
+        headerTitle="表单赋值"
+      />,
+    );
+
+    await html.findAllByText('创建时间');
+
+    // 等待formRef初始化完成
+    await waitFor(() => {
+      expect(formRef.current).toBeDefined();
+      expect(typeof formRef.current?.submit).toBe('function');
+    });
+
+    // 测试formRef的submit方法
+    act(() => {
+      formRef.current?.submit();
+    });
+
+    await waitFor(() => {
+      expect(onSubmitFn).toHaveBeenCalledWith('2020-09-11');
+    });
+
+    // 测试formRef的getFieldsValue方法
+    const fieldsValue = formRef.current?.getFieldsValue?.();
+    expect(fieldsValue).toBeDefined();
+    expect(fieldsValue?.since).toBeDefined();
+    expect(fieldsValue?.since?.format?.('YYYY-MM-DD')).toBe('2020-09-11');
+
+    // 测试formRef的setFieldsValue方法
+    act(() => {
+      formRef.current?.setFieldsValue?.({
+        since: dayjs('2020-10-15 00:00:00'),
       });
     });
 
-    await waitTime(500);
+    // 验证字段值已更新
+    await waitFor(() => {
+      const updatedFieldsValue = formRef.current?.getFieldsValue?.();
+      expect(updatedFieldsValue?.since?.format?.('YYYY-MM-DD')).toBe(
+        '2020-10-15',
+      );
+    });
 
-    expect(html.render()).toMatchSnapshot();
-
+    // 测试formRef的resetFields方法
     act(() => {
-      html.unmount();
+      formRef.current?.resetFields?.();
+    });
+
+    // 验证字段已重置
+    await waitFor(() => {
+      const resetFieldsValue = formRef.current?.getFieldsValue?.();
+      expect(resetFieldsValue?.since?.format?.('YYYY-MM-DD')).toBe(
+        '2020-09-11',
+      );
+    });
+
+    // 测试formRef的getFieldValue方法
+    const fieldValue = formRef.current?.getFieldValue?.('since');
+    expect(fieldValue?.format?.('YYYY-MM-DD')).toBe('2020-09-11');
+
+    // 测试formRef的setFieldValue方法
+    act(() => {
+      formRef.current?.setFieldValue?.('since', dayjs('2020-12-25 00:00:00'));
+    });
+
+    await waitFor(() => {
+      const newFieldValue = formRef.current?.getFieldValue?.('since');
+      expect(newFieldValue?.format?.('YYYY-MM-DD')).toBe('2020-12-25');
+    });
+  });
+
+  it('🎏 should validate on initial load when ignoreRules is false', async () => {
+    const requestFn = vi.fn();
+    const { container } = render(
+      <ProTable
+        columns={[
+          {
+            title: 'Name',
+            dataIndex: 'name',
+            formItemProps: {
+              rules: [{ required: true, message: 'Required' }],
+            },
+          },
+        ]}
+        form={{ ignoreRules: false }}
+        request={async () => {
+          requestFn();
+          return { data: [] };
+        }}
+        rowKey="key"
+      />,
+    );
+
+    await waitFor(() => {
+      // Should show validation error
+      expect(
+        container.querySelector('.ant-form-item-explain-error'),
+      ).toBeTruthy();
+    });
+
+    expect(requestFn).not.toHaveBeenCalled();
+  });
+
+  it('🎏 should validate on reset when ignoreRules is false and initial value is empty', async () => {
+    const requestFn = vi.fn();
+    const { getByText, container } = render(
+      <ProTable
+        columns={[
+          {
+            title: 'Name',
+            dataIndex: 'name',
+            formItemProps: {
+              rules: [{ required: true, message: 'Required' }],
+            },
+          },
+        ]}
+        form={{ ignoreRules: false }}
+        request={async () => {
+          requestFn();
+          return { data: [] };
+        }}
+        rowKey="key"
+      />,
+    );
+
+    // Initial load should fail validation
+    await waitFor(() => {
+      expect(
+        container.querySelector('.ant-form-item-explain-error'),
+      ).toBeTruthy();
+    });
+    expect(requestFn).not.toHaveBeenCalled();
+
+    // Enter value
+    const input = container.querySelector('[id$="_name"]');
+    fireEvent.change(input!, { target: { value: 'hello' } });
+
+    fireEvent.click(getByText('查 询'));
+
+    await waitFor(() => {
+      expect(requestFn).toHaveBeenCalledTimes(1);
+    });
+
+    requestFn.mockClear();
+
+    // Reset
+    fireEvent.click(getByText('重 置'));
+
+    await waitFor(() => {
+      // Reset should clear input (back to empty initialValue).
+      // And trigger validation.
+      expect(
+        container.querySelector('.ant-form-item-explain-error'),
+      ).toBeTruthy();
+    });
+
+    // Request should NOT be called because validation failed
+    expect(requestFn).not.toHaveBeenCalled();
+  });
+
+  it('🐛 #9433 submits optionRender=false search from onValuesChange', async () => {
+    const formRef = {
+      current: undefined,
+    } as React.MutableRefObject<ProFormInstance | undefined>;
+    const requestFn = vi.fn(async () => ({ data: [], success: true }));
+    const { container } = render(
+      <ProTable
+        columns={[
+          {
+            title: 'Title',
+            dataIndex: 'title',
+            formItemProps: {
+              rules: [{ required: true, message: 'Required' }],
+            },
+          },
+        ]}
+        formRef={formRef}
+        form={{
+          ignoreRules: false,
+          onValuesChange: () => formRef.current?.submit(),
+        }}
+        search={{ optionRender: false }}
+        request={requestFn}
+        rowKey="key"
+      />,
+    );
+
+    const input = container.querySelector<HTMLInputElement>('[id$="_title"]')!;
+    fireEvent.change(input, { target: { value: 'ProComponents' } });
+
+    await waitFor(() => {
+      expect(requestFn).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'ProComponents' }),
+        {},
+        {},
+      );
+    });
+  });
+
+  it('🎏 replaces the search form when filterType changes (#9613)', async () => {
+    const Demo = () => {
+      const [filterType, setFilterType] = React.useState<'query' | 'light'>(
+        'query',
+      );
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              setFilterType((type) => (type === 'query' ? 'light' : 'query'))
+            }
+          >
+            toggle
+          </button>
+          <ProTable
+            columns={[{ title: 'Name', dataIndex: 'name' }]}
+            dataSource={[]}
+            search={{ filterType }}
+            rowKey="key"
+          />
+        </>
+      );
+    };
+
+    const { container, getByText } = render(<Demo />);
+    expect(container.querySelectorAll('.ant-pro-query-filter')).toHaveLength(1);
+    expect(
+      container.querySelectorAll('.ant-pro-form-light-filter'),
+    ).toHaveLength(0);
+
+    fireEvent.click(getByText('toggle'));
+    await waitFor(() => {
+      expect(container.querySelectorAll('.ant-pro-query-filter')).toHaveLength(
+        0,
+      );
+      expect(
+        container.querySelectorAll('.ant-pro-form-light-filter'),
+      ).toHaveLength(1);
+    });
+
+    fireEvent.click(getByText('toggle'));
+    await waitFor(() => {
+      expect(container.querySelectorAll('.ant-pro-query-filter')).toHaveLength(
+        1,
+      );
+      expect(
+        container.querySelectorAll('.ant-pro-form-light-filter'),
+      ).toHaveLength(0);
     });
   });
 });

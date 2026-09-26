@@ -1,15 +1,18 @@
-import { mount } from 'enzyme';
-import React from 'react';
-import { ConfigProvider } from 'antd';
-import ProTable from '@ant-design/pro-table';
-import { request } from './demo';
-import { waitForComponentToPaint } from '../util';
-import moment from 'moment';
+import { ProTable } from '@ant-design/pro-components';
+import { cleanup, render, waitFor } from '@testing-library/react';
+import { Badge, ConfigProvider, Table } from 'antd';
+import dayjs from 'dayjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { request } from './fixtures';
+
+afterEach(() => {
+  cleanup();
+});
 
 describe('Table ColumnSetting', () => {
   it('🎏 render', async () => {
-    const callBack = jest.fn();
-    const html = mount(
+    const callBack = vi.fn();
+    render(
       <ProTable
         size="small"
         columns={[
@@ -24,14 +27,16 @@ describe('Table ColumnSetting', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(callBack).toBeCalled();
-    expect(callBack).toBeCalledWith('Edward King 0');
+
+    await waitFor(() => {
+      expect(callBack).toHaveBeenCalled();
+      expect(callBack).toHaveBeenCalledWith('Edward King 0');
+    });
   });
 
   it('🎏 query should parse by valueType', async () => {
-    const callBack = jest.fn();
-    const html = mount(
+    const callBack = vi.fn();
+    render(
       <ProTable
         size="small"
         columns={[
@@ -44,17 +49,16 @@ describe('Table ColumnSetting', () => {
         ]}
         form={{
           initialValues: {
-            date: moment(),
+            date: dayjs(),
           },
         }}
         request={async (params) => {
-          console.log(params);
           callBack(params.date);
           return {
             data: [
               {
                 key: '1',
-                date: moment(),
+                date: dayjs(),
               },
             ],
             success: true,
@@ -63,13 +67,15 @@ describe('Table ColumnSetting', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1000);
-    expect(callBack).toBeCalled();
-    expect(callBack).toBeCalledWith('2016-11-22');
+
+    await waitFor(() => {
+      expect(callBack).toHaveBeenCalled();
+      expect(callBack).toHaveBeenCalledWith('2016-11-22');
+    });
   });
 
   it('🎏 config provide render', async () => {
-    const html = mount(
+    const { container } = render(
       <ConfigProvider prefixCls="qixian">
         <ProTable
           size="small"
@@ -85,13 +91,15 @@ describe('Table ColumnSetting', () => {
         />
       </ConfigProvider>,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(html.render()).toMatchSnapshot();
+
+    // ConfigProvider prefixCls 应正确传递到 ProTable
+    expect(container.querySelector('.qixian-table')).toBeTruthy();
+    expect(container.querySelector('.qixian-table-wrapper')).toBeTruthy();
   });
 
   it('🎏 render text', async () => {
-    const callBack = jest.fn();
-    const html = mount(
+    const callBack = vi.fn();
+    render(
       <ProTable
         size="small"
         columns={[
@@ -112,13 +120,15 @@ describe('Table ColumnSetting', () => {
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(callBack).toBeCalled();
-    expect(callBack).toBeCalledWith('Edward King 0');
+
+    await waitFor(() => {
+      expect(callBack).toHaveBeenCalled();
+      expect(callBack).toHaveBeenCalledWith('Edward King 0');
+    });
   });
 
   it('🎏 change text by renderText', async () => {
-    const html = mount(
+    const { container } = render(
       <ProTable
         size="small"
         columns={[
@@ -130,11 +140,231 @@ describe('Table ColumnSetting', () => {
           },
         ]}
         search={false}
-        request={request}
+        dataSource={[
+          {
+            key: '1',
+            name: 'Edward King',
+            age: 10,
+            status: 1,
+            sex: 'man',
+          },
+        ]}
         rowKey="key"
       />,
     );
-    await waitForComponentToPaint(html, 1200);
-    expect(html.find('td.ant-table-cell')).toMatchSnapshot();
+
+    // renderText 应将文本追加 '2144'
+    const cellElement = container.querySelector('td.ant-table-cell');
+    expect(cellElement).toBeTruthy();
+    expect(cellElement?.textContent).toContain('Edward King2144');
+  });
+
+  it('🎏 columns request support params function', async () => {
+    const paramsKeys: string[] = [];
+    render(
+      <ProTable
+        size="small"
+        columns={[
+          {
+            title: 'Name',
+            key: 'name',
+            dataIndex: 'name',
+            renderText: (text) => `${text}2144`,
+          },
+
+          {
+            title: 'Name',
+            key: 'name',
+            valueType: 'select',
+            dataIndex: 'name',
+            params: (rowData) => {
+              return {
+                key: rowData.key,
+              };
+            },
+            request: async (params) => {
+              paramsKeys.push(params.key);
+              return [];
+            },
+          },
+        ]}
+        search={false}
+        dataSource={[
+          {
+            key: '1',
+            name: 'Edward King',
+            age: 10,
+            status: 1,
+            sex: 'man',
+          },
+          {
+            key: '2',
+            name: 'Edward King',
+            age: 10,
+            status: 1,
+            sex: 'man',
+          },
+        ]}
+        rowKey="key"
+      />,
+    );
+
+    expect(paramsKeys.length).toBe(2);
+    expect(paramsKeys.join('-')).toBe('1-2');
+  });
+
+  it('🎏 extra columns', async () => {
+    const { container } = render(
+      <ProTable
+        rowKey="key"
+        columns={[
+          {
+            title: 'Name',
+            key: 'name',
+            dataIndex: 'name',
+          },
+          Table.EXPAND_COLUMN,
+          Table.SELECTION_COLUMN,
+        ]}
+        dataSource={[
+          {
+            key: '1',
+            name: 'Name 1',
+          },
+          {
+            key: '2',
+            name: 'Name 2',
+          },
+        ]}
+        expandable={{
+          expandedRowRender: (record) => <div>{record.name}</div>,
+        }}
+        rowSelection={{}}
+      />,
+    );
+
+    // 应正确渲染 Table.EXPAND_COLUMN 和 Table.SELECTION_COLUMN
+    expect(container.querySelector('.ant-table')).toBeTruthy();
+    // 应有 2 行数据
+    expect(container.querySelectorAll('.ant-table-row').length).toBe(2);
+    // 应渲染展开列和选择列
+    expect(container.querySelector('.ant-table-selection-column')).toBeTruthy();
+    expect(
+      container.querySelector('.ant-table-row-expand-icon-cell'),
+    ).toBeTruthy();
+    // 应渲染 Name 列数据（验证 tbody 中包含数据文本）
+    const tbody = container.querySelector('.ant-table-tbody');
+    expect(tbody?.textContent).toContain('Name 1');
+    expect(tbody?.textContent).toContain('Name 2');
+  });
+
+  it('🐛 copyable 单元格中文复制不应带尾部空格', async () => {
+    const { container } = render(
+      <ProTable
+        search={false}
+        toolBarRender={false}
+        columns={[
+          {
+            title: '名称',
+            dataIndex: 'name',
+            copyable: true,
+          },
+        ]}
+        dataSource={[
+          {
+            key: '1',
+            name: '中文',
+          },
+        ]}
+        rowKey="key"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('tbody td')?.textContent).toContain(
+        '中文',
+      );
+    });
+
+    const td = container.querySelector('tbody td')!;
+    const text = td.textContent || '';
+
+    // When selecting/copying the cell text, trailing whitespace should not exist.
+    expect(text).toBe(text.trimEnd());
+    expect(text.endsWith('\u00a0')).toBe(false);
+  });
+
+  it('🐛 ellipsis tooltip 不显示 [object Object] 当 renderText 返回 JSX', async () => {
+    const { container } = render(
+      <ProTable
+        search={false}
+        toolBarRender={false}
+        columns={[
+          {
+            title: '手机号',
+            dataIndex: 'phone',
+            width: 80,
+            ellipsis: true,
+            renderText: (text, row) =>
+              text ? (
+                <span>
+                  {row.phoneVerified ? (
+                    <Badge status="success" />
+                  ) : (
+                    <Badge status="error" />
+                  )}
+                  &nbsp;
+                  {text}
+                </span>
+              ) : (
+                text
+              ),
+          },
+        ]}
+        dataSource={[
+          {
+            key: '1',
+            phone: '13800138000',
+            phoneVerified: true,
+          },
+        ]}
+        rowKey="key"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('tbody td')?.textContent).toContain(
+        '13800138000',
+      );
+    });
+
+    // 修复：renderText 返回 JSX 时 ellipsis tooltip 不应显示 [object Object]
+    expect(container.innerHTML).not.toContain('[object Object]');
+  });
+
+  it('🐛 固定选择列的表头 z-index 规则应使用 v6 的 cell-fix-start 类名', () => {
+    const { container } = render(
+      <ProTable
+        search={false}
+        toolBarRender={false}
+        rowKey="key"
+        columns={[
+          { title: '名称', dataIndex: 'name', fixed: 'start' },
+          { title: '状态', dataIndex: 'status' },
+          { title: '操作', dataIndex: 'option', fixed: 'end' },
+        ]}
+        rowSelection={{ fixed: 'start' }}
+        dataSource={[{ key: '1', name: '中文', status: 1, option: 'x' }]}
+      />,
+    );
+
+    // 固定选择列的表头单元格应带有 cell-fix-start 类名
+    const selectionTh = container.querySelector(
+      'th.ant-table-selection-column',
+    );
+    expect(selectionTh?.className).toContain('ant-table-cell-fix-start');
+
+    // 选择列 z-index 规则应正确注入，避免表头勾选框被相邻固定列遮挡
+    expect(document.head.textContent).toContain('calc(var(--z-offset, 0) + 2)');
   });
 });
